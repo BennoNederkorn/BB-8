@@ -1,0 +1,3 @@
+[submodule "WebRTC_HandshakeServer"]
+	path = WebRTC_HandshakeServer
+	url = git@github.com:User/WebRTC_HandshakeServer.git
