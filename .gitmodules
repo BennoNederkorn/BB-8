@@ -1,6 +1,6 @@
 [submodule "WebRTC_HandshakeServer"]
 	path = WebRTC_HandshakeServer
 	url = git@github.com:BennoNederkorn/WebRTC_HandshakeServer.git
-[submodule "WebApp_HumanMachineInterface"]
-	path = WebApp_HumanMachineInterface
-	url = git@github.com:BennoNederkorn/WebApp_HumanMachineInterface.git
+[submodule "HumanMachineInterface"]
+	path = HumanMachineInterface
+	url = git@github.com:BennoNederkorn/HumanMachineInterface.git
