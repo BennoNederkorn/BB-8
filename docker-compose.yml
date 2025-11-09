@@ -1,0 +1,44 @@
+version: '3.8'
+
+networks:
+  robot_net:
+    driver: bridge
+
+services:
+  # --- The ROS 2 Control Node ---
+  ros-control:
+    build: ./ros_control
+    container_name: ros_control
+    restart: always
+    networks:
+      - robot_net
+    devices:
+      # Grants container access to the ESP32
+      # !! MODIFY "/dev/ttyUSB0" to match your device !!
+      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    volumes:
+      # Mounts the host's ros_ws into the container for live development
+      - ./ros_control/ros_ws:/root/ros_ws
+    command: >
+      bash -c "source /opt/ros/humble/setup.bash && 
+               source /root/ros_ws/install/setup.bash && 
+               ros2 launch your_package your_launch_file.py"
+
+  # --- The AI Inference Node ---
+  ai-inference:
+    build: ./ai_inference
+    container_name: ai_inference
+    restart: always
+    networks:
+      - robot_net
+    runtime: nvidia  # !! CRITICAL: Enables container access to the GPU
+    devices:
+      # Grants container access to the camera
+      # !! MODIFY "/dev/video0" if your camera is different !!
+      - "/dev/video0:/dev/video0"
+    ports:
+      # Exposes the AI's internal API port
+      - "5000:5000"
+    volumes:
+      # Mounts the host's AI code into the container
+      - ./ai_inference/app:/app
