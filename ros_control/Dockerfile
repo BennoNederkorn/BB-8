@@ -14,7 +14,7 @@ RUN apt-get update && \
     ros-kilted-rosbridge-suite \
     ros-kilted-cv-bridge \
     ros-kilted-image-transport \
-    ros-kilted-dev-tools \
+    ros-kilted-demo-nodes-cpp \
     && \
     rm -rf /var/lib/apt/lists/*
 
@@ -22,14 +22,19 @@ RUN apt-get update && \
 # This layer builds our local source code
 FROM base AS builder
 
+# SET THE DEFAULT SHELL to /bin/bash
+# This fixes the 'Bad substitution' error
+SHELL ["/bin/bash", "-c"]
+
 # Create a directory for our workspace
 WORKDIR /root/ros_ws
 
 # Copy our local workspace code (from the host) into the container
+# THIS IS THE CRITICAL FIX - DO NOT LEAVE THIS COMMENTED
 COPY ./ros_ws /root/ros_ws
 
-# --- THIS IS YOUR SNIPPET (Corrected for Kilted) ---
-# Source the ROS environment and build our workspace
+# --- THIS IS YOUR SNIPPET (Corrected) ---
+# Source the ROS environment (now in bash) and build our workspace
 RUN . /opt/ros/kilted/setup.bash && \
     colcon build --symlink-install
 

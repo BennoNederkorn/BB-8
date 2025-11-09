@@ -12,17 +12,20 @@ services:
     restart: always
     networks:
       - robot_net
-    devices:
-      # Grants container access to the ESP32
-      # !! MODIFY "/dev/ttyUSB0" to match your device !!
-      - "/dev/ttyUSB0:/dev/ttyUSB0"
+    # This grants the container access to your ESP32.
+    # Change '/dev/ttyUSB0' to the *actual* port you found on your Jetson
+    #    (e.g., /dev/ttyUSB0, /dev/ttyUSB1, or /dev/ttyACM0).
+    # devices:
+    #  - "/dev/ttyUSB0:/dev/ttyUSB0"
+    # 'privileged' is often required for direct hardware access
+    privileged: true
     volumes:
       # Mounts the host's ros_ws into the container for live development
       - ./ros_control/ros_ws:/root/ros_ws
-    command: >
-      bash -c "source /opt/ros/humble/setup.bash && 
-               source /root/ros_ws/install/setup.bash && 
-               ros2 launch your_package your_launch_file.py"
+    # This command keeps the container alive in the background
+    # so you can 'exec' into it for development.
+    command: tail -f /dev/null
+
 
   # --- The AI Inference Node ---
   ai-inference:
