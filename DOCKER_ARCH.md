@@ -4,12 +4,12 @@ This document outlines the containerized software architecture for the autonomou
 
 ## 1. Architecture Overview
 
-The software architecture is containerized and managed by `docker-compose` to ensure a modular, reproducible, and isolated environment. It consists of two primary services that run in separate containers:
+The software architecture is containerized and managed by `docker-compose` to ensure a modular, reproducible, and isolated environment. It consists of a ROS2 control service and one or more AI inference services that run in separate containers:
 
 * **`ros-control`**: A container running ROS2. This service is responsible for all high-level control, communication with the smartphone-based HMI, and interfacing with the low-level ESP32 motor controller.
-* **`ai-inference`**: A dedicated inference container for AI processing. This service runs on a specialized **NVIDIA L4T (Linux for Tegra)** base image to leverage the Jetson's GPU for hardware-accelerated inference. It handles tasks such as person detection (RF-DETR) and facial recognition (InsightFace).
+* **AI inference services (`ai-*`)**: One or more dedicated inference containers under `ai_inference/<subdir>` for specific models/applications (e.g., person detection, pose estimation, face recognition). Each subdirectory contains its own Dockerfile and optional docker scripts. These services run on specialized **NVIDIA L4T (Linux for Tegra)** base images to leverage the Jetson's GPU for hardware-accelerated inference.
 
-These two services communicate over a shared Docker bridge network, allowing the `ros-control` node to request analytics data from the `ai-inference` node.
+The services communicate over a shared Docker bridge network, allowing `ros-control` to request analytics data from the desired AI service by addressing it by service name (e.g., `http://ai-inference:5000/detect`).
 
 ## 2. Prerequisites (Host Setup)
 
@@ -25,48 +25,53 @@ Before launching the application, the host Nvidia Jetson platform must be config
 
 ## 3. Project Directory Structure
 
-The repository should be structured as follows to work with the provided configuration files:
+The repository is structured to support multiple AI inference containers. Each AI application lives under its own subdirectory in `ai_inference/` with its own Dockerfile (and optional docker helper scripts):
 
 ```bash
 bb8_project/
-├── docker-compose.yml       # Main Docker Compose orchestration file
+├── docker-compose.yml               # Main Docker Compose orchestration file
 │
 ├── ros_control/
-│   ├── Dockerfile             # Defines the ROS2 container
-│   └── ros_ws/                # Your ROS 2 workspace (src, build, log, install)
+│   ├── Dockerfile                   # Defines the ROS2 container
+│   └── ros_ws/                      # Your ROS 2 workspace (src, build, log, install)
 │
 └── ai_inference/
-    ├── Dockerfile             # Defines the AI inference container
-    ├── requirements.txt       # Python dependencies (PyTorch, InsightFace, etc.)
-    └── app/                   # Python scripts for the AI inference API
+    ├── jetson-inference/            # NVIDIA jetson-inference based container
+    │   ├── Dockerfile
+    │   └── docker/                  # Helper scripts (build.sh, run.sh, ...)
+    │
+    ├── <another-model-or-app>/      # Future AI container(s)
+    │   └── Dockerfile               # Each AI container provides its own image
+    │
+    └── ...
 ```
 ## 4. Configuration Files
 
 Below are the contents of the core configuration files. 
 
-* **docker-compose.yml**: This file defines the two services (`ros-control`, `ai-inference`) and the shared network (`robot_net`).
-* **ros_control/Dockerfile**: This Dockerfile builds the ROS2 container, installing rosbridge (for HMI) and micro-ros (for ESP32).
-* **ai_inference/Dockerfile**: This Dockerfile builds the AI container from an official NVIDIA L4T-PyTorch image. This base image includes pre-compiled PyTorch and all necessary CUDA/cuDNN libraries for the Jetson, ensuring maximum performance.  
+* **docker-compose.yml**: This file defines `ros-control` and one or more AI services (e.g., `ai-inference`) and the shared network (`robot_net`). Each AI service points its build context to a different subdirectory under `ai_inference/`.
+* **ros_control/Dockerfile**: Builds the ROS2 container, installing rosbridge (for HMI) and micro-ros (for ESP32).
+* **ai_inference/<subdir>/Dockerfile**: Builds an AI container from an appropriate NVIDIA L4T base image (e.g., the provided `ai_inference/jetson-inference/Dockerfile`). These base images include pre-compiled PyTorch and CUDA/cuDNN libraries for Jetson.
 
 ## 5. System & Communication Flow
 
-The two containers operate on the shared robot_net network and interact as follows:
+The containers operate on the shared `robot_net` network and interact as follows:
 
-* **AI Node (ai-inference)**:
+* **AI Node(s) (`ai-*`)**:
 
-    * This container runs a simple web server (e.g., Flask) in `app/main.py`.
-    * It exposes API endpoints (e.g., `/detect`, `/recognize`).
+    * Each AI container can expose its own API (e.g., Flask/FastAPI or gRPC) with endpoints like `/detect` or `/recognize`.
     * When an endpoint is called, it captures a frame from `/dev/video0`, performs hardware-accelerated inference using the Jetson's GPU, and returns a JSON response (e.g., bounding boxes, recognition IDs).
+    * The provided `ai_inference/jetson-inference` image compiles and ships NVIDIA's jetson-inference toolset. You can mount `ai_inference/jetson-inference/data` to persist downloaded models and training datasets.
 
 * **ROS Node (ros-control)**:
-    * This container runs the main ROS2 logic.
-    * It communicates with the ESP32 controller via the mapped serial device (/dev/ttyUSB0).
-    * To get analytics, a ROS node (in Python) makes an HTTP request to the AI node (e.g., requests.get('http://ai-inference:5000/detect')). It can use the service name ai-inference as a hostname.
+    * Runs the main ROS2 logic.
+    * Communicates with the ESP32 controller via the mapped serial device (/dev/ttyUSB0).
+    * To get analytics, a ROS node (in Python) makes an HTTP request to the appropriate AI service (e.g., `requests.get('http://ai-inference:5000/detect')`). It can use the service name as the hostname.
     * It receives the JSON response and publishes the analytics (e.g., bounding boxes, gestures) as ROS2 topics.
 
 * **Data Flow Summary**:
     * **Control (HMI)**: HMI -> ros-control (via rosbridge) -> ESP32 (via serial)
-    * **Control (AI)**: Camera -> ai-inference (via API call) -> ros-control (via HTTP) -> ESP32 (via serial)
+    * **Control (AI)**: Camera -> AI service (via HTTP) -> ros-control (via HTTP) -> ESP32 (via serial)
     * **Video**: ESP32-S3 Camera -> HMI (via WebRTC)
 
 ## 6. Usage
@@ -99,8 +104,11 @@ docker-compose logs -f ai-inference
 # Shell into the ROS container
 docker-compose exec ros-control bash
 
-# Shell into the AI container
+# Shell into the default AI container
 docker-compose exec ai-inference bash
+
+# If you add more AI containers, replace the service name accordingly
+# docker-compose exec ai-<your-service> bash
 ```
 
 * Stop and remove all containers, networks, and volumes:

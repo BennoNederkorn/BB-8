@@ -26,7 +26,9 @@ services:
 
   # --- The AI Inference Node ---
   ai-inference:
-    build: ./ai_inference
+    build:
+      context: ./ai_inference/jetson-inference
+      dockerfile: Dockerfile
     container_name: ai_inference
     restart: always
     networks:
@@ -40,5 +42,16 @@ services:
       # Exposes the AI's internal API port
       - "5000:5000"
     volumes:
-      # Mounts the host's AI code into the container
-      - ./ai_inference/app:/app
+      # Persist/download models and datasets across container rebuilds
+      - ./ai_inference/jetson-inference/data:/jetson-inference/data
+      # Optional: uncomment to live-develop against the whole repo (dev mode)
+      # - ./ai_inference/jetson-inference:/jetson-inference
+    environment:
+      # Required by some Jetson containers when using GPU/graphics
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    # Notes:
+    # - This service is now built from ai_inference/jetson-inference.
+    # - To add more AI inference containers, create additional subdirectories
+    #   under ai_inference/<model-or-app>/ with their own Dockerfile and add
+    #   new services here with build.context pointing to them.
