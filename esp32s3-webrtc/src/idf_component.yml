@@ -1,0 +1,11 @@
+## idf_component.yml
+dependencies:
+  espressif/esp_peer: "*"
+  espressif/esp32-camera: "*"
+  espressif/esp_websocket_client: "~1.5.0"
+  espressif/esp_audio_codec: "*"
+# https://components.espressif.com/components/espressif/esp_peer/versions/1.2.6/readme
+# https://components.espressif.com/components/espressif/esp_audio_codec/versions/2.3.0/readme
+# https://components.espressif.com/components/espressif/esp32-camera/versions/2.1.4/readme
+# https://components.espressif.com/components/espressif/esp32_s3_eye/versions/5.0.2/readme
+# https://components.espressif.com/components/espressif/esp_websocket_client/versions/1.6.0/readme

@@ -1,0 +1,23 @@
+# sdkconfig.defaults is used to override the default settings of the ESP-IDF
+CONFIG_MBEDTLS_SSL_PROTO_DTLS=y # enables DTLS (Datagram TLS). This is SSL over UDP rather than TCP.
+CONFIG_MBEDTLS_SSL_DTLS_SRTP=y # enables SRTP extension which exclusively used for WebRTC
+CONFIG_MBEDTLS_SSL_PROTO_TLS1_2=y # enables TLS version 1.2 (the current standard for most IoT).
+CONFIG_MBEDTLS_X509_CREATE_C=y # generates X.509 certificates on the chip itself
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y # compiles the Mozilla Root Certificate Bundle into your firmware
+CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
+CONFIG_MBEDTLS_TLS_SERVER_NAME_INDICATION=y # enables SNI. This is required to connect to servers that host multiple domains on one IP address.
+
+# enable different mathematical algorithms for the device and server to agree on an encryption key.
+CONFIG_MBEDTLS_KEY_EXCHANGE_RSA=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_DHE_RSA=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_RSA=y
+CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA=y
+
+# Flash size configuration
+CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
+CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+
+# Partition Table Config (tells IDF to use our custom CSV)
+CONFIG_PARTITION_TABLE_CUSTOM=y
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="huge_app.csv"
+CONFIG_PARTITION_TABLE_FILENAME="huge_app.csv"
