@@ -8,8 +8,10 @@ services:
   # --- The ROS 2 Control Node ---
   ros-control:
     build: ./ros_control
+    image: bb-8_ros-control         # Names the built image for easy reference  
     container_name: ros_control
-    restart: always
+    restart: always^
+    network_mode: "host"            # Host networking allows this node to see the AI node automatically
     networks:
       - robot_net
     # This grants the container access to your ESP32.
@@ -34,9 +36,10 @@ services:
       dockerfile: Dockerfile
     container_name: ai_inference
     restart: always
+    network_mode: "host"          # Host networking allows this node to see the ROS node automatically
     networks:
       - robot_net
-    runtime: nvidia  # !! CRITICAL: Enables container access to the GPU
+    runtime: nvidia               # Enables container access to the GPU
     devices:
       # Grants container access to the camera
       # !! MODIFY "/dev/video0" if your camera is different !!

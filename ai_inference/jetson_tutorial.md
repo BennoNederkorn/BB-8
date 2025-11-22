@@ -26,10 +26,9 @@
     sudo pip3 install docker-compose
     docker-compose --version
     docker-compose build ros-control
-    docker-compose up -d ros-control
-    docker-compose exec ros-control /bin/bash
+    docker-compose up -d ros-control && docker-compose exec ros-control /bin/bash
     ros2 run demo_nodes_cpp listener & ros2 run demo_nodes_cpp talker  
-    ```
+    ``` 
 * **Step 11**: Build the AI Inference container
     ```bash
     cd /Documents/BB-8/ai_inference/jetson-inference
