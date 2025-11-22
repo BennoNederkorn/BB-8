@@ -4,3 +4,6 @@
 [submodule "HumanMachineInterface"]
 	path = HumanMachineInterface
 	url = git@github.com:BennoNederkorn/HumanMachineInterface.git
+[submodule "SentryDashboard"]
+	path = SentryDashboard
+	url = https://github.com/leezhuole/video-analytics-frontend.git

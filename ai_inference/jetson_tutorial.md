@@ -11,7 +11,7 @@
     sudo systemctl enable --now ssh
     ip addr show
     ``` 
-    * ip address: try 192.168.2.146
+    * ip address: try 192.168.2.149
 * **Step 5**: In the host computer's terminal, run ``ssh breakingbytes@your_jetson_ip``
 * **Step 6**: Once connected via SSH, run ``sudo systemctl set-default multi-user.target`` to tell Jetson to not boot the GUI. To reverse this run ``sudo systemctl set-default graphical.target``. 
 * **Step 7**: Run ``sudo reboot``. This will cause the SSH connection to the Jetson to break. Reconnect after 15 seconds.
@@ -26,6 +26,8 @@
     sudo pip3 install docker-compose
     docker-compose --version
     docker-compose build ros-control
+    docker-compose up -d ros-control
+    docker-compose exec ros-control /bin/bash
     ros2 run demo_nodes_cpp listener & ros2 run demo_nodes_cpp talker  
     ```
 * **Step 11**: Build the AI Inference container
@@ -33,19 +35,66 @@
     cd /Documents/BB-8/ai_inference/jetson-inference
     docker/run.sh    
     ```
-    If you are not prompted to download the pretrained models, run the following inside the container
+    If you are not prompted to download the pretrained models, run the following **inside the container**
     ```bash
     cd /jetson-inference/tools/
     ./download-models.sh
     ```
+* **Step 12**: Generate SSL certificate and private key using ``openssl``. Run the following inside the Docker container as root:
+    ```bash
+    openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost'
+    ```
 
+    What this command does:
+    - ``req -x509``: Creates a self-signed certificate (standard for development/internal IPs).
+    - ``newkey rsa:4096``: Generates a new RSA private key with 4096-bit strength.
+    - ``keyout key.pem``: Saves the private key to key.pem (matches your export SSL_KEY).
+    - ``out cert.pem``: Saves the certificate to cert.pem (matches your export SSL_CERT).
+    - ``nodes: "No DES"`` – it creates an unencrypted key so the script can load it without asking you for a password every time (crucial for autonomous startup).
+    - ``subj '/CN=localhost'``: Sets the "Common Name" to localhost, suppressing the interactive prompts
 
-
+* **Step 13**: Export the SSL Keys and Certificates
+    ```bash
+    export SSL_KEY=/jetson-inference/data/key.pem
+    export SSL_CERT=/jetson-inference/data/cert.pem
+    ```
+* **Step 14**: Run the detection network
+    ```bash
+    detectnet.py --headless webrtc://@:8554/input webrtc://@:8554/output    
+    ```
 
 # Jetson Username and Password
 ```bash
 username: breakingbytes
 password: 12345
+```
+
+# Jetson Specifications
+* **Jetpack Version**: 4.6
+
+
+# Gracefully shutting down the Jetson
+## Check and stop all running containers
+```bash
+docker ps
+docker-compose down
+docker stop $(docker ps -q)
+```
+
+## Manually flush all disk caches
+```bash
+sync
+sleep 1
+sync
+```
+## Initiate the system shutdown
+```bash
+sudo shutdown -h now
+```
+
+# Update and upgrade packages
+```bash
+sudo apt update && sudo apt upgrade
 ```
 
 # Troubleshooting
@@ -63,3 +112,25 @@ password: 12345
 ## SSH connection fails after rebooting (e.g., timeout)
 1. Connect host computer to NVIDIA Jetson via microUSB and use PuTTy to connect to the console via serial bus. Navigate the same steps as this [tutorial](https://developer.nvidia.com/embedded/learn/get-started-jetson-nano-devkit#setup) for headless setup. 
 2. If the microUSB connection is not showing as a serial connection on the host, pray that the system files did not get corrupted from reboot. You can check this by connecting the Jetson to a display and rebooting it. 
+
+```bash
+ssh-keygen -R 192.168.2.146
+```
+
+## WIFI Connection Failing
+1. Delete the connection ``sudo nmcli connection delete "MagentaWLAN-DXPQ"``
+1. Unplug the wifi router and plug it back in
+2. Scan the network and see what it can detect: ``sudo nmcli device wifi list``
+3. Force the connection to 2.4 GHz (try Channel 11)
+4. Find the BSSID (MAC Address) for the 2.4 GHz
+    ```bash
+    sudo nmcli -f SSID,BSSID,CHAN,SIGNAL dev wifi list
+    ```
+5. Connect using the BSSID
+    ```
+    sudo nmcli dev wifi connect "MagentaWLAN-DXPQ" bssid <PASTE_BSSID_HERE> password "YOUR_PASSWORD"
+    ```
+6. Verify the Connection
+    ```bash
+    ip a show wlan0
+    ```
