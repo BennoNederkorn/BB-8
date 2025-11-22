@@ -6,7 +6,7 @@ services:
     build: ./ros_control
     image: bb-8_ros-control         # Names the built image for easy reference  
     container_name: ros_control
-    restart: always^
+    restart: always
     network_mode: "host"            # Host networking allows this node to see the AI node automatically
     # This grants the container access to your ESP32.
     # Change '/dev/ttyUSB0' to the *actual* port you found on your Jetson
