@@ -1,9 +1,5 @@
 version: '3.8'
 
-networks:
-  robot_net:
-    driver: bridge
-
 services:
   # --- The ROS 2 Control Node ---
   ros-control:
@@ -12,8 +8,6 @@ services:
     container_name: ros_control
     restart: always^
     network_mode: "host"            # Host networking allows this node to see the AI node automatically
-    networks:
-      - robot_net
     # This grants the container access to your ESP32.
     # Change '/dev/ttyUSB0' to the *actual* port you found on your Jetson
     #    (e.g., /dev/ttyUSB0, /dev/ttyUSB1, or /dev/ttyACM0).
@@ -37,8 +31,6 @@ services:
     container_name: ai_inference
     restart: always
     network_mode: "host"          # Host networking allows this node to see the ROS node automatically
-    networks:
-      - robot_net
     runtime: nvidia               # Enables container access to the GPU
     devices:
       # Grants container access to the camera
