@@ -4,7 +4,7 @@
 	<arg name="output_bitrate" default="0"/>
 	<arg name="topic"/>
 
-	<node pkg="ros_deep_learning" exec="video_output" output="screen">
+	<node pkg="ros_deep_learning" exec="video_output" output="screen" respawn="true" respawn_delay="2.0">
 		<remap from="/video_output/image_in" to="$(var topic)"/>
 		<param name="resource" value="$(var output)"/>
 		<param name="codec" value="$(var output_codec)"/>

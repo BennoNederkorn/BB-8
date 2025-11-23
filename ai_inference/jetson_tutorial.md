@@ -71,6 +71,10 @@ password: 12345
 # Jetson Specifications
 * **Jetpack Version**: 4.6
 
+# Starting the rosbridge
+```bash
+ros2 launch rosbridge_server rosbridge_websocket_launch.xml delay_between_messages:=0.0
+```
 
 # Gracefully shutting down the Jetson
 ## Check and stop all running containers
