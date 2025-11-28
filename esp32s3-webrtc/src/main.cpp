@@ -1,3 +1,9 @@
+// -- CONFIGURATION --
+#define BLINK_GPIO GPIO_NUM_3
+#define WIFI_SSID "not.a.virus.exe"
+#define WIFI_PASSWORD "12345678!" // Yes I know, ...
+#define BOARD_ESP32S3_WROOM 1
+
 extern "C"
 {
 #include "freertos/FreeRTOS.h"
@@ -14,22 +20,56 @@ extern "C"
 #include "cJSON.h"
 #include "esp_peer.h"
 #include "esp_crt_bundle.h"
+#include "camera_pinout.h"
 }
-
-// -- CONFIGURATION --
-#define BLINK_GPIO GPIO_NUM_3
-#define WIFI_SSID "not.a.virus.exe"
-#define WIFI_PASSWORD "12345678!" // Yes I know, ...
 
 // --- Globals ---
 static const char *TAG = "ESP32S3_WEBRTC_APP";
 static EventGroupHandle_t rtc_event_group;
 const int WIFI_CONNECTED_BIT = BIT1;
+#if ESP_CAMERA_SUPPORTED
+static camera_config_t camera_config = {
+    .pin_pwdn = CAM_PIN_PWDN,
+    .pin_reset = CAM_PIN_RESET,
+    .pin_xclk = CAM_PIN_XCLK,
+    .pin_sccb_sda = CAM_PIN_SIOD,
+    .pin_sccb_scl = CAM_PIN_SIOC,
+
+    .pin_d7 = CAM_PIN_D7,
+    .pin_d6 = CAM_PIN_D6,
+    .pin_d5 = CAM_PIN_D5,
+    .pin_d4 = CAM_PIN_D4,
+    .pin_d3 = CAM_PIN_D3,
+    .pin_d2 = CAM_PIN_D2,
+    .pin_d1 = CAM_PIN_D1,
+    .pin_d0 = CAM_PIN_D0,
+    .pin_vsync = CAM_PIN_VSYNC,
+    .pin_href = CAM_PIN_HREF,
+    .pin_pclk = CAM_PIN_PCLK,
+
+    // XCLK 20MHz or 10MHz for OV2640 double FPS (Experimental)
+    .xclk_freq_hz = 20000000,
+    .ledc_timer = LEDC_TIMER_0,
+    .ledc_channel = LEDC_CHANNEL_0,
+    // PIXFORMAT_JPEG: camera compresses the image into a JPEG before sending it to the ESP32.
+    // PIXFORMAT_RAW: A raw VGA image is ~600KB. A JPEG VGA image is ~30KB.
+    .pixel_format = PIXFORMAT_RGB565, // YUV422,GRAYSCALE,RGB565,JPEG
+    .frame_size = FRAMESIZE_VGA,
+
+    .jpeg_quality = 12,                  // 0-63, for OV series camera sensors, lower number means higher quality
+    .fb_count = 1,                       // When jpeg mode is used, if fb_count more than one, the driver will work in continuous mode. // allocates space for two images in memory.
+    .fb_location = CAMERA_FB_IN_PSRAM,   // forces the image buffer to use larger External RAM.
+    .grab_mode = CAMERA_GRAB_WHEN_EMPTY, // Buffer is only filled with new camera data if the CPU has finished reading the previous data.
+    // .grab_mode = CAMERA_GRAB_LATEST;   // Captures the latest frame, discarding older ones.
+};
+#endif
 
 // --- Function Prototypes ---
+static void init_nvs(void);
 static void wifi_init_sta(void);
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
-static void init_nvs(void);
+static void camera_init(void);
+static void print_camera_image_hex(void);
 
 // --- Main Application ---
 extern "C" void app_main(void)
@@ -61,6 +101,10 @@ extern "C" void app_main(void)
         ESP_LOGI(TAG, "LED ON");
         vTaskDelay(500 / portTICK_PERIOD_MS);
     }
+
+    ESP_LOGI(TAG, "starting the camera...");
+    camera_init();
+    print_camera_image_hex();
 }
 
 /*
@@ -125,4 +169,39 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
         ESP_LOGI(TAG, "IP: " IPSTR, IP2STR(&event->ip_info.ip));
         xEventGroupSetBits(rtc_event_group, WIFI_CONNECTED_BIT); // signal to the app_main that ESP32S3 is now online
     }
+}
+
+// --- OV2640 Camera ---
+static void camera_init(void)
+{
+    // https://github.com/espressif/esp32-camera?tab=readme-ov-file#initialization
+
+    esp_err_t err = esp_camera_init(&camera_config); // apply the settings and boot up the camera
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Camera init failed: 0x%x", err);
+        return;
+    }
+    vTaskDelay(1000 / portTICK_PERIOD_MS);
+    ESP_LOGI(TAG, "Camera ready");
+}
+
+static void print_camera_image_hex(void)
+{
+    camera_fb_t *fb = esp_camera_fb_get();
+    if (!fb)
+    {
+        ESP_LOGE(TAG, "Camera capture failed - no frame buffer returned");
+        return;
+    }
+    ESP_LOGI(TAG, "Image captured! Size: %d bytes, Format: %d", fb->len, fb->format);
+    ESP_LOGI(TAG, "\n--- START JPEG HEX ---\n");
+    for (size_t i = 0; i < fb->len; i++)
+    {
+        // Print 02x (e.g., "A5") without spaces to make it compact
+        printf("%02x", fb->buf[i]);
+    }
+    ESP_LOGI(TAG, "\n--- END JPEG HEX ---\n");
+
+    esp_camera_fb_return(fb);
 }

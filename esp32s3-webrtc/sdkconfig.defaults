@@ -1,4 +1,51 @@
 # sdkconfig.defaults is used to override the default settings of the ESP-IDF
+# Handles "Kernel" configuration—FreeRTOS tick rates, stack sizes, compiler optimization levels (e.g., -Os vs -O2),
+# and specific driver features (e.g., enabling PSRAM software support).
+
+# -----------------------------------------------------------------------
+# SDK Configuration Defaults for ESP32-S3-EYE V2.2
+# -----------------------------------------------------------------------
+# Target Definition
+CONFIG_IDF_TARGET="esp32s3"
+CONFIG_IDF_TARGET_ESP32S3=y
+
+# -----------------------------------------------------------------------
+# System Frequency & Optimization
+# -----------------------------------------------------------------------
+# Run at max frequency (240MHz) for AI inference performance
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+# Compiler optimization: -O2 for performance (vs -Os for size)
+CONFIG_COMPILER_OPTIMIZATION_PERF=y
+
+# -----------------------------------------------------------------------
+# SPIRAM (External RAM) Configuration
+# -----------------------------------------------------------------------
+# Enable support for external RAM
+CONFIG_ESP32S3_SPIRAM_SUPPORT=y
+CONFIG_SPIRAM_MODE_OCT=y # Mode: Octal (Required for hardware V2.2)
+CONFIG_SPIRAM_SPEED_80M=y # Speed: 80MHz (Required for high-bandwidth Camera/LCD data)
+CONFIG_SPIRAM_USE_MALLOC=y # Allow the memory allocator to use SPIRAM automatically for malloc()
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y # Allow.bss segment to overflow into SPIRAM (Critical for large static buffers in AI models)
+CONFIG_SPIRAM_MEMTEST=y # Memory Test: Verify RAM integrity on boot
+
+# -----------------------------------------------------------------------
+# Cache Configuration
+# -----------------------------------------------------------------------
+# Maximize instruction/data cache for large model traversal
+CONFIG_ESP32S3_DATA_CACHE_32KB=y
+CONFIG_ESP32S3_DATA_CACHE_LINE_64B=y
+
+# -----------------------------------------------------------------------
+# Camera Configuration (esp32-camera component)
+# -----------------------------------------------------------------------
+# Ensure support is enabled if the component is present
+CONFIG_ESP32_CAMERA_SUPPORT=y
+CONFIG_ESP32_CAMERA_JPEG_MODE_FRAME_SIZE_AUTO=y
+
+# -----------------------------------------------------------------------
+# WebRTC Configuration
+# -----------------------------------------------------------------------
 CONFIG_MBEDTLS_SSL_PROTO_DTLS=y # enables DTLS (Datagram TLS). This is SSL over UDP rather than TCP.
 CONFIG_MBEDTLS_SSL_DTLS_SRTP=y # enables SRTP extension which exclusively used for WebRTC
 CONFIG_MBEDTLS_SSL_PROTO_TLS1_2=y # enables TLS version 1.2 (the current standard for most IoT).
@@ -6,18 +53,21 @@ CONFIG_MBEDTLS_X509_CREATE_C=y # generates X.509 certificates on the chip itself
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE=y # compiles the Mozilla Root Certificate Bundle into your firmware
 CONFIG_MBEDTLS_CERTIFICATE_BUNDLE_DEFAULT_FULL=y
 CONFIG_MBEDTLS_TLS_SERVER_NAME_INDICATION=y # enables SNI. This is required to connect to servers that host multiple domains on one IP address.
-
 # enable different mathematical algorithms for the device and server to agree on an encryption key.
 CONFIG_MBEDTLS_KEY_EXCHANGE_RSA=y
 CONFIG_MBEDTLS_KEY_EXCHANGE_DHE_RSA=y
 CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_RSA=y
 CONFIG_MBEDTLS_KEY_EXCHANGE_ECDHE_ECDSA=y
 
-# Flash size configuration
-CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y
-CONFIG_ESPTOOLPY_FLASHSIZE="8MB"
+# -----------------------------------------------------------------------
+# FreeRTOS Configuration
+# -----------------------------------------------------------------------
+# 1000Hz tick rate for responsive task scheduling
+CONFIG_FREERTOS_HZ=1000
 
-# Partition Table Config (tells IDF to use our custom CSV)
+# -----------------------------------------------------------------------
+# Partition Table
+# -----------------------------------------------------------------------
 CONFIG_PARTITION_TABLE_CUSTOM=y
-CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="huge_app.csv"
-CONFIG_PARTITION_TABLE_FILENAME="huge_app.csv"
+CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions.csv"
+CONFIG_PARTITION_TABLE_OFFSET=0x8000
