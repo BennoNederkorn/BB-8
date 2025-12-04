@@ -131,9 +131,11 @@ ssh-keygen -R 192.168.2.146
     ```
 5. Connect using the BSSID
     ```
-    sudo nmcli dev wifi connect "MagentaWLAN-DXPQ" bssid <PASTE_BSSID_HERE> password "YOUR_PASSWORD"
+    sudo nmcli dev wifi connect "Vodafone-5104" bssid 08:A7:C0:DC:51:08 password 'syubsyub!0824'
+
+    08:A7:C0:DC:51:08
     ```
-6. Verify the Connection
+6. Verify the Connection    
     ```bash
     ip a show wlan0
     ```
