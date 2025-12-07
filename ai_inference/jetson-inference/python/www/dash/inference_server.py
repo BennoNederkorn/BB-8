@@ -105,7 +105,7 @@ def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tupl
             if img is None:
                 continue
 
-            detections = net.Detect(img)
+            detections = net.Detect(img, overlay='none')
             fps = net.GetNetworkFPS()
             if math.isinf(fps) or math.isnan(fps):
                 fps = 0.0
@@ -154,7 +154,8 @@ def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tupl
                     loop.call_soon_threadsafe(queue.put_nowait, ("/camera/face_events", payload))
 
             output.Render(img)
-            output.SetStatus(f"{fps:.1f} FPS | {args.network}")
+            # Disable status bar overlay to remove text on stream
+            # output.SetStatus(f"{fps:.1f} FPS | {args.network}")
         except Exception:
             # keep running even if a frame fails
             continue
