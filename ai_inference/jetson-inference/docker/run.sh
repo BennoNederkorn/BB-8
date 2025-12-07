@@ -60,6 +60,7 @@ NETWORKS_DIR="data/networks"
 CLASSIFY_DIR="python/training/classification"
 DETECTION_DIR="python/training/detection/ssd"
 RECOGNIZER_DIR="python/www/recognizer"
+DASH_DIR="python/www/dash"
 
 DOCKER_ROOT="/jetson-inference"	# where the project resides inside docker
 
@@ -70,7 +71,9 @@ DATA_VOLUME=" \
 --volume $PWD/$CLASSIFY_DIR/models:$DOCKER_ROOT/$CLASSIFY_DIR/models \
 --volume $PWD/$DETECTION_DIR/data:$DOCKER_ROOT/$DETECTION_DIR/data \
 --volume $PWD/$DETECTION_DIR/models:$DOCKER_ROOT/$DETECTION_DIR/models \
---volume $PWD/$RECOGNIZER_DIR/data:$DOCKER_ROOT/$RECOGNIZER_DIR/data "
+--volume $PWD/$RECOGNIZER_DIR/data:$DOCKER_ROOT/$RECOGNIZER_DIR/data \
+--volume $PWD/$DASH_DIR:$DOCKER_ROOT/$DASH_DIR "
+
 
 # parse user arguments
 USER_COMMAND=""
