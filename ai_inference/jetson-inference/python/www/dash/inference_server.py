@@ -89,14 +89,10 @@ async def telemetry_loop(queue: "asyncio.Queue[Tuple[str, Dict[str, Any]]]") -> 
 
 def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tuple[str, Dict[str, Any]]]", stop_event: threading.Event, args: argparse.Namespace) -> None:
     """Capture -> infer -> render, forwarding events into the asyncio queue."""
-    video_args = []
-    if args.ssl_cert and args.ssl_key:
-        video_args.extend([f"--ssl-cert={args.ssl_cert}", f"--ssl-key={args.ssl_key}"])
-    video_args.extend(["--input-codec=mjpeg", "--output-encoder=cpu"])
-
+    # align with detectnet.py: let jetson.utils parse CLI flags (e.g., WebRTC codec negotiation)
     net = jetson.inference.detectNet(args.network, sys.argv, args.threshold)
-    source = jetson.utils.videoSource(args.input, argv=video_args)
-    output = jetson.utils.videoOutput(args.output, argv=video_args)
+    source = jetson.utils.videoSource(args.input, argv=sys.argv)
+    output = jetson.utils.videoOutput(args.output, argv=sys.argv)
 
     while not stop_event.is_set():
         try:
@@ -148,13 +144,14 @@ async def client_handler(websocket: websockets.WebSocketServerProtocol, path: st
 def main() -> None:
     parser = argparse.ArgumentParser(description="Jetson inference WebSocket broadcaster")
     parser.add_argument("--network", default="facenet", help="detectNet/faceNet model name")
-    parser.add_argument("--input", default="/dev/video0", help="video input URI")
+    parser.add_argument("--input", default="webrtc://@:8554/input", help="video input URI")
     parser.add_argument("--output", default="webrtc://@:8554/output", help="video output URI")
     parser.add_argument("--threshold", type=float, default=0.4, help="detection threshold")
     parser.add_argument("--ws-port", type=int, default=9090, help="WebSocket port")
     parser.add_argument("--ssl-cert", type=str, default=None, help="path to SSL cert for WebRTC")
     parser.add_argument("--ssl-key", type=str, default=None, help="path to SSL key for WebRTC")
-    args = parser.parse_args()
+    # allow extra jetson-utils args (e.g., --headless, codec flags) to pass through
+    args, _ = parser.parse_known_args()
 
     loop = asyncio.get_event_loop()
     asyncio.set_event_loop(loop)
