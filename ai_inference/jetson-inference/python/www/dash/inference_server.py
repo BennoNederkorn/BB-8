@@ -13,7 +13,12 @@ import random
 import threading
 import time
 import sys
+import math
+import base64
 from typing import Any, Dict, Set, Tuple
+
+import cv2
+import numpy as np
 
 import jetson.inference
 import jetson.utils
@@ -102,6 +107,8 @@ def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tupl
 
             detections = net.Detect(img)
             fps = net.GetNetworkFPS()
+            if math.isinf(fps) or math.isnan(fps):
+                fps = 0.0
             loop.call_soon_threadsafe(queue.put_nowait, ("/system/status", {
                 "cpu_temp": round(_read_cpu_temp_c(), 2),
                 "ram_usage": round(_read_ram_usage_pct(), 2),
@@ -109,15 +116,42 @@ def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tupl
                 "state": "ARMED",
             }))
 
-            for det in detections:
-                class_id = det.ClassID
-                payload = {
-                    "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-                    "person_id": net.GetClassDesc(class_id) if net.GetClassDesc(class_id) else f"ClassID-{class_id}",
-                    "confidence": round(det.Confidence, 4),
-                    "is_unknown": False if class_id >= 0 else True,
-                }
-                loop.call_soon_threadsafe(queue.put_nowait, ("/camera/face_events", payload))
+            if len(detections) > 0:
+                # copy CUDA image to host for ROI encoding
+                np_img = jetson.utils.cudaToNumpy(img)
+                height, width = np_img.shape[0], np_img.shape[1]
+
+                for det in detections:
+                    class_id = det.ClassID
+                    x1 = max(0, int(det.Left))
+                    y1 = max(0, int(det.Top))
+                    x2 = min(width, int(det.Right))
+                    y2 = min(height, int(det.Bottom))
+
+                    roi_b64 = ""
+                    try:
+                        crop = np_img[y1:y2, x1:x2]
+                        if crop.size > 0:
+                            # convert RGBA/RGB to BGR for OpenCV encoding
+                            if crop.shape[2] == 4:
+                                crop = cv2.cvtColor(crop, cv2.COLOR_RGBA2BGR)
+                            else:
+                                crop = cv2.cvtColor(crop, cv2.COLOR_RGB2BGR)
+
+                            ok, buffer = cv2.imencode('.jpg', crop)
+                            if ok:
+                                roi_b64 = base64.b64encode(buffer).decode('ascii')
+                    except Exception:
+                        roi_b64 = ""
+
+                    payload = {
+                        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                        "person_id": net.GetClassDesc(class_id) if net.GetClassDesc(class_id) else f"ClassID-{class_id}",
+                        "confidence": round(det.Confidence, 4),
+                        "is_unknown": False if class_id >= 0 else True,
+                        "roi_crop": roi_b64,
+                    }
+                    loop.call_soon_threadsafe(queue.put_nowait, ("/camera/face_events", payload))
 
             output.Render(img)
             output.SetStatus(f"{fps:.1f} FPS | {args.network}")
