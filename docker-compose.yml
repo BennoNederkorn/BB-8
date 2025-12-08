@@ -39,9 +39,6 @@ services:
       # Grants container access to the camera
       # !! MODIFY "/dev/video0" if your camera is different !!
       - "/dev/video0:/dev/video0"
-    ports:
-      # Exposes the AI's internal API port
-      - "5000:5000"
     volumes:
       # Persist/download models and datasets across container rebuilds
       - ./ai_inference/jetson-inference/data:/jetson-inference/data
