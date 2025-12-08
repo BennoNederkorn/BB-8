@@ -32,6 +32,7 @@ services:
     restart: always
     network_mode: "host"          # Host networking allows this node to see the ROS node automatically
     runtime: nvidia               # Enables container access to the GPU
+    privileged: true              # Match run.sh hardware access behavior
     working_dir: /jetson-inference
     tty: true
     stdin_open: true
@@ -56,13 +57,12 @@ services:
       - /proc/device-tree/model:/tmp/nv_jetson_model
       - /var/run/dbus:/var/run/dbus
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
-      - /tmp/.X11-unix:/tmp/.X11-unix
+      # X11 mount removed for headless operation
 
     environment:
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
-      - DISPLAY=${DISPLAY}
     # Notes:
     # - This service is now built from ai_inference/jetson-inference.
     # - To add more AI inference containers, create additional subdirectories
