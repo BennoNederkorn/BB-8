@@ -12,3 +12,6 @@ python/training/classification/models/*
 python/training/detection/ssd/data/*
 python/training/detection/ssd/models/*
 python/www/recognizer/data/*
+**/*.pem
+**/*.key
+**/*.crt
