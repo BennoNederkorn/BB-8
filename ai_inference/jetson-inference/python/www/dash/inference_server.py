@@ -57,6 +57,19 @@ def _read_ram_usage_pct() -> float:
     return 35.0 + random.random() * 10.0  # fallback placeholder
 
 
+def _read_gpu_load_pct() -> float:
+    """Read GPU load percentage from sysfs. Jetson reports 0-255, convert to 0-100%."""
+    path = "/sys/devices/gpu.0/load"
+    try:
+        with open(path, "r") as f:
+            raw = float(f.read().strip())
+            # Convert from 0-255 range to percentage, clamp to 0-100
+            pct = max(0.0, min(100.0, (raw / 255.0) * 100.0))
+            return round(pct, 2)
+    except Exception:
+        return 0.0 + random.random() * 5.0  # lightweight fallback placeholder
+
+
 # -----------------------------
 # Broadcast utility
 # -----------------------------
@@ -81,6 +94,7 @@ async def telemetry_loop(queue: "asyncio.Queue[Tuple[str, Dict[str, Any]]]") -> 
         payload = {
             "cpu_temp": round(_read_cpu_temp_c(), 2),
             "ram_usage": round(_read_ram_usage_pct(), 2),
+            "gpu_load": round(_read_gpu_load_pct(), 2),
             "inference_fps": 0.0,  # updated by inference worker via queue
             "state": "ARMED",
         }
@@ -112,6 +126,7 @@ def inference_worker(loop: asyncio.AbstractEventLoop, queue: "asyncio.Queue[Tupl
             loop.call_soon_threadsafe(queue.put_nowait, ("/system/status", {
                 "cpu_temp": round(_read_cpu_temp_c(), 2),
                 "ram_usage": round(_read_ram_usage_pct(), 2),
+                "gpu_load": round(_read_gpu_load_pct(), 2),
                 "inference_fps": round(fps, 2),
                 "state": "ARMED",
             }))
