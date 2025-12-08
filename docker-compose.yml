@@ -32,6 +32,9 @@ services:
     restart: always
     network_mode: "host"          # Host networking allows this node to see the ROS node automatically
     runtime: nvidia               # Enables container access to the GPU
+    working_dir: /jetson-inference
+    tty: true
+    stdin_open: true
     devices:
       # Grants container access to the camera
       # !! MODIFY "/dev/video0" if your camera is different !!
@@ -42,12 +45,27 @@ services:
     volumes:
       # Persist/download models and datasets across container rebuilds
       - ./ai_inference/jetson-inference/data:/jetson-inference/data
-      # Optional: uncomment to live-develop against the whole repo (dev mode)
-      # - ./ai_inference/jetson-inference:/jetson-inference
+      - ./ai_inference/jetson-inference/python/training/classification/data:/jetson-inference/python/training/classification/data
+      - ./ai_inference/jetson-inference/python/training/classification/models:/jetson-inference/python/training/classification/models
+      - ./ai_inference/jetson-inference/python/training/detection/ssd/data:/jetson-inference/python/training/detection/ssd/data
+      - ./ai_inference/jetson-inference/python/training/detection/ssd/models:/jetson-inference/python/training/detection/ssd/models
+      - ./ai_inference/jetson-inference/python/www/recognizer/data:/jetson-inference/python/www/recognizer/data
+      - ./ai_inference/jetson-inference/python/www/dash:/jetson-inference/python/www/dash
+      
+      # Hardware/System Passthrough
+      - /tmp/argus_socket:/tmp/argus_socket
+      - /etc/enctune.conf:/etc/enctune.conf
+      - /etc/nv_tegra_release:/etc/nv_tegra_release
+      - /proc/device-tree/model:/tmp/nv_jetson_model
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+      - /tmp/.X11-unix:/tmp/.X11-unix
+
     environment:
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
+      - DISPLAY=${DISPLAY}
     # Notes:
     # - This service is now built from ai_inference/jetson-inference.
     # - To add more AI inference containers, create additional subdirectories

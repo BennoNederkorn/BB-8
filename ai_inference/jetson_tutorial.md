@@ -60,7 +60,7 @@
 * **Step 14**: Run the detection network
     ```bash
     detectnet.py --headless webrtc://@:8554/input webrtc://@:8554/output    
-    python3 inference_server.py --network=facenet --headless webrtc://@:8554/input webrtc://@:8554/output
+    python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 webrtc://@:8554/input webrtc://@:8554/output
     ```
 
 # Jetson Username and Password

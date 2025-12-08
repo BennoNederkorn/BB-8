@@ -58,13 +58,13 @@ def _read_ram_usage_pct() -> float:
 
 
 def _read_gpu_load_pct() -> float:
-    """Read GPU load percentage from sysfs. Jetson reports 0-255, convert to 0-100%."""
+    """Read GPU load percentage from sysfs. Jetson reports 0-1000 (tenths of a percent)."""
     path = "/sys/devices/gpu.0/load"
     try:
         with open(path, "r") as f:
             raw = float(f.read().strip())
-            # Convert from 0-255 range to percentage, clamp to 0-100
-            pct = max(0.0, min(100.0, (raw / 255.0) * 100.0))
+            # Convert from 0-1000 range to percentage
+            pct = max(0.0, min(100.0, raw / 10.0))
             return round(pct, 2)
     except Exception:
         return 0.0 + random.random() * 5.0  # lightweight fallback placeholder
