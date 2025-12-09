@@ -93,7 +93,7 @@ sync
 ```
 ## Initiate the system shutdown
 ```bash
-sudo shutdown -h now
+    sudo shutdown -h now
 ```
 
 # Update and upgrade packages

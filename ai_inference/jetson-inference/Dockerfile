@@ -6,8 +6,12 @@ FROM dustynv/jetson-inference:r32.7.1
 # 1. Install websockets
 RUN pip3 install websockets
 
+# 2. Install onnxruntime (GPU version for Jetson)
+RUN wget https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.whl -O onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl && \
+    pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl && \
+    rm onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
 
-# 2. Create startup script (SSL setup only; no IP export)
+# 3. Create startup script (SSL setup only; no IP export)
 RUN printf '%s\n' \
   '#!/bin/bash' \
   'set -e' \
