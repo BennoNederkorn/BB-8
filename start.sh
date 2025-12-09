@@ -13,4 +13,4 @@ fi
 
 # 2. Start the Docker Compose services
 echo "Starting Docker Compose..."
-docker-compose up
+docker-compose up -d
