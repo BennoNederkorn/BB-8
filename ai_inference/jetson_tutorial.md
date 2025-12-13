@@ -82,7 +82,7 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml delay_between_messag
 ```bash
 docker ps
 docker-compose down
-docker stop $(docker ps -q)
+    docker stop $(docker ps -q)
 ```
 
 ## Manually flush all disk caches
@@ -132,7 +132,7 @@ ssh-keygen -R 192.168.2.146
     ```
 5. Connect using the BSSID
     ```
-    sudo nmcli dev wifi connect "Vodafone-5104" bssid 08:A7:C0:DC:51:08 password 'syubsyub!0824'
+    sudo nmcli dev wifi connect "" password ''
 
     08:A7:C0:DC:51:08
     ```
@@ -140,3 +140,7 @@ ssh-keygen -R 192.168.2.146
     ```bash
     ip a show wlan0
     ```
+
+
+
+docker-compose up -d --build
