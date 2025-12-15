@@ -28,6 +28,8 @@ services:
     build:
       context: ./ai_inference/jetson-inference
       dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: dustynv/ros:humble-pytorch-l4t-r32.7.1
     container_name: ai_inference
     restart: always
     network_mode: "host"          # Host networking allows this node to see the ROS node automatically
@@ -37,8 +39,6 @@ services:
     tty: true
     stdin_open: true
     devices:
-      # Grants container access to the camera
-      # !! MODIFY "/dev/video0" if your camera is different !!
       - "/dev/video0:/dev/video0"
     volumes:
       # Persist/download models and datasets across container rebuilds
@@ -62,6 +62,7 @@ services:
       # X11 mount removed for headless operation
 
     environment:
+      - ROS_DISTRO=humble
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
