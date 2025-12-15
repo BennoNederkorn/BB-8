@@ -18,6 +18,8 @@ services:
     volumes:
       # Mounts the host's ros_ws into the container for live development
       - ./ros_control/ros_ws:/root/ros_ws
+      # Disable FastDDS shared-memory transport (avoid SHM-related crashes)
+      - ./fastdds_no_shm.xml:/etc/fastdds_no_shm.xml:ro
     # This command keeps the container alive in the background
     # so you can 'exec' into it for development.
     command: tail -f /dev/null
@@ -27,6 +29,7 @@ services:
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_LOCALHOST_ONLY=0
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/etc/fastdds_no_shm.xml
 
 
   # --- The AI Inference Node ---
@@ -68,12 +71,15 @@ services:
       # X11 mount removed for headless operation
 
       - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
+      # Disable FastDDS shared-memory transport (avoid SHM-related crashes)
+      - ./fastdds_no_shm.xml:/etc/fastdds_no_shm.xml:ro
     shm_size: "512m"
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=0
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_LOCALHOST_ONLY=0
+      - FASTRTPS_DEFAULT_PROFILES_FILE=/etc/fastdds_no_shm.xml
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
