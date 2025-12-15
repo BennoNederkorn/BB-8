@@ -21,6 +21,11 @@ services:
     # This command keeps the container alive in the background
     # so you can 'exec' into it for development.
     command: tail -f /dev/null
+    environment:
+      - ROS_DISTRO=kilted
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_LOCALHOST_ONLY=0
 
 
   # --- The AI Inference Node ---
@@ -66,6 +71,9 @@ services:
 
     environment:
       - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=0
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_LOCALHOST_ONLY=0
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
       - NVIDIA_DRIVER_CAPABILITIES=all
