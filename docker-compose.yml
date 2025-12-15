@@ -61,6 +61,9 @@ services:
       - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
       # X11 mount removed for headless operation
 
+      - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
+
+
     environment:
       - ROS_DISTRO=humble
       # Required by some Jetson containers when using GPU/graphics
