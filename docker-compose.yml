@@ -21,6 +21,7 @@ services:
     # This command keeps the container alive in the background
     # so you can 'exec' into it for development.
     command: tail -f /dev/null
+    shm_size: "512m"
     environment:
       - ROS_DISTRO=kilted
       - ROS_DOMAIN_ID=0
@@ -67,8 +68,7 @@ services:
       # X11 mount removed for headless operation
 
       - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
-
-
+    shm_size: "512m"
     environment:
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=0
