@@ -1,12 +1,44 @@
 # Custom Dockerfile for BB-8 AI Inference
-# Extends the ROS2 Humble-enabled image selected by docker/run.sh --ros humble
 ARG BASE_IMAGE=dustynv/ros:humble-pytorch-l4t-r32.7.1
 FROM ${BASE_IMAGE}
 
-# Install CycloneDDS RMW to avoid FastDDS interop crashes
-RUN apt-get update && \
-  apt-get install -y ros-humble-rmw-cyclonedds-cpp && \
-  rm -rf /var/lib/apt/lists/*
+# ==========================================
+# FIX & BUILD CYCLONE DDS (SOURCE BUILD)
+# ==========================================
+
+# 1. Fix expired GPG keys and install build tools
+# We use "|| true" on the first update to ignore the initial GPG error so we can install curl.
+RUN apt-get update || true && \
+    apt-get install -y curl gnupg2 lsb-release && \
+    curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add - && \
+    apt-get update && \
+    apt-get install -y \
+    cmake \
+    build-essential \
+    python3-colcon-common-extensions \
+    git \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. Clone CycloneDDS and RMW adapter
+WORKDIR /ros2_cyclone_ws/src
+RUN git clone https://github.com/eclipse-cyclonedds/cyclonedds.git && \
+    git clone https://github.com/ros2/rmw_cyclonedds.git -b humble
+
+# 3. Build them against the existing ROS Humble install
+WORKDIR /ros2_cyclone_ws
+RUN /bin/bash -c "source /opt/ros/humble/install/setup.bash && \
+    colcon build --merge-install --packages-up-to rmw_cyclonedds_cpp"
+
+# 4. Set Environment Variable to force usage of Cyclone
+ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+
+# ==========================================
+# USER CUSTOMIZATIONS
+# ==========================================
+
+# Reset working directory
+WORKDIR /
 
 # 1. Install websockets
 RUN pip3 install websockets
@@ -16,23 +48,21 @@ RUN wget https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.w
     pip3 install onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl && \
     rm onnxruntime_gpu-1.11.0-cp36-cp36m-linux_aarch64.whl
 
-# 3. Startup script: source ROS humble + ros_deep_learning overlays (like run.sh output) + SSL certs
+# 3. Startup script: Source our new workspace + overlays
 RUN printf '%s\n' \
   '#!/bin/bash' \
   'set -e' \
   '' \
-  '# Source ROS 2 Humble environment (paths vary by image)' \
-  'if [ -n "${ROS_DISTRO}" ] && [ -f "/opt/ros/${ROS_DISTRO}/install/setup.bash" ]; then' \
-  '  # shellcheck disable=SC1090' \
+  '# Source ROS 2 Humble environment' \
+  '# We prioritize the new Cyclone workspace, which chains the base ROS install' \
+  'if [ -f "/ros2_cyclone_ws/install/setup.bash" ]; then' \
+  '  source "/ros2_cyclone_ws/install/setup.bash"' \
+  'elif [ -n "${ROS_DISTRO}" ] && [ -f "/opt/ros/${ROS_DISTRO}/install/setup.bash" ]; then' \
   '  source "/opt/ros/${ROS_DISTRO}/install/setup.bash"' \
-  'elif [ -n "${ROS_DISTRO}" ] && [ -f "/opt/ros/${ROS_DISTRO}/setup.bash" ]; then' \
-  '  # shellcheck disable=SC1090' \
-  '  source "/opt/ros/${ROS_DISTRO}/setup.bash"' \
   'fi' \
   '' \
-  '# Source ros_deep_learning overlay if present (matches run.sh behavior)' \
+  '# Source ros_deep_learning overlay if present' \
   'if [ -f "/ros_deep_learning/install/setup.bash" ]; then' \
-  '  # shellcheck disable=SC1091' \
   '  source "/ros_deep_learning/install/setup.bash"' \
   'fi' \
   '' \
@@ -56,7 +86,3 @@ RUN printf '%s\n' \
   
 ENTRYPOINT ["/start.sh"]
 CMD ["/bin/bash"]
-
-
-
-
