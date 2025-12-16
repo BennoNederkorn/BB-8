@@ -18,17 +18,21 @@ RUN rm -f /etc/apt/sources.list.d/ros2*.list && \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Clone CycloneDDS and RMW adapter
-# FIX: We pin CycloneDDS to version 0.10.2 (Standard for Humble) to avoid compilation errors
+# We pin to 0.10.2 which is the standard for Humble
 WORKDIR /ros2_cyclone_ws/src
 RUN git clone -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds.git && \
     git clone https://github.com/ros2/rmw_cyclonedds.git -b humble
 
 # 3. Build them against the existing ROS Humble install
-# FIX: We disable Testing and Examples to avoid the specific linker error you saw in 'ddsperf'
+# FIX: Added -DENABLE_DDSPERF=OFF to prevent 'idlc' from running and crashing due to library conflicts
 WORKDIR /ros2_cyclone_ws
 RUN /bin/bash -c "source /opt/ros/humble/install/setup.bash && \
     colcon build --merge-install --packages-up-to rmw_cyclonedds_cpp \
-    --cmake-args -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF"
+    --cmake-args \
+    -DBUILD_TESTING=OFF \
+    -DBUILD_EXAMPLES=OFF \
+    -DENABLE_DDSPERF=OFF \
+    -DENABLE_SHM=OFF"
 
 # 4. Set Environment Variable to force usage of Cyclone
 ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
