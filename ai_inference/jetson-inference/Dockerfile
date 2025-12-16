@@ -6,11 +6,9 @@ FROM ${BASE_IMAGE}
 # FIX & BUILD CYCLONE DDS (SOURCE BUILD)
 # ==========================================
 
-# 1. Fix expired GPG keys and install build tools
-# We use "|| true" on the first update to ignore the initial GPG error so we can install curl.
-RUN apt-get update || true && \
-    apt-get install -y curl gnupg2 lsb-release && \
-    curl -s https://raw.githubusercontent.com/ros/rosdistro/master/ros.key | apt-key add - && \
+# 1. REMOVE the broken ROS apt repository and install build tools
+# We delete /etc/apt/sources.list.d/ros2*.list so apt-get update doesn't fail.
+RUN rm -f /etc/apt/sources.list.d/ros2*.list && \
     apt-get update && \
     apt-get install -y \
     cmake \
