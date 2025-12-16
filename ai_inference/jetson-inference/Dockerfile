@@ -6,8 +6,11 @@ FROM ${BASE_IMAGE}
 # FIX & BUILD CYCLONE DDS (SOURCE BUILD)
 # ==========================================
 
-# 1. REMOVE the broken ROS apt repository and install build tools
+# 1. REMOVE broken apt repos AND conflicting old Cyclone libraries
+# We remove /opt/ros/humble/lib/libddsc* so the build doesn't link against old versions by mistake.
 RUN rm -f /etc/apt/sources.list.d/ros2*.list && \
+    rm -f /opt/ros/humble/lib/libddsc* && \
+    rm -f /opt/ros/humble/bin/idlc && \
     apt-get update && \
     apt-get install -y \
     cmake \
@@ -18,20 +21,20 @@ RUN rm -f /etc/apt/sources.list.d/ros2*.list && \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Clone CycloneDDS and RMW adapter
-# We pin to 0.10.2 which is the standard for Humble
 WORKDIR /ros2_cyclone_ws/src
 RUN git clone -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds.git && \
     git clone https://github.com/ros2/rmw_cyclonedds.git -b humble
 
 # 3. Build them against the existing ROS Humble install
-# FIX: Added -DENABLE_DDSPERF=OFF to prevent 'idlc' from running and crashing due to library conflicts
+# FIX: Use correct flag BUILD_DDSPERF=OFF
+# FIX: Clean environment helps prevent loading old libs
 WORKDIR /ros2_cyclone_ws
 RUN /bin/bash -c "source /opt/ros/humble/install/setup.bash && \
     colcon build --merge-install --packages-up-to rmw_cyclonedds_cpp \
     --cmake-args \
     -DBUILD_TESTING=OFF \
     -DBUILD_EXAMPLES=OFF \
-    -DENABLE_DDSPERF=OFF \
+    -DBUILD_DDSPERF=OFF \
     -DENABLE_SHM=OFF"
 
 # 4. Set Environment Variable to force usage of Cyclone
