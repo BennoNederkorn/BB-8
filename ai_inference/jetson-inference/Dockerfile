@@ -3,6 +3,11 @@
 ARG BASE_IMAGE=dustynv/ros:humble-pytorch-l4t-r32.7.1
 FROM ${BASE_IMAGE}
 
+# Install CycloneDDS RMW to avoid FastDDS interop crashes
+RUN apt-get update && \
+  apt-get install -y ros-humble-rmw-cyclonedds-cpp && \
+  rm -rf /var/lib/apt/lists/*
+
 # 1. Install websockets
 RUN pip3 install websockets
 

@@ -15,6 +15,7 @@ RUN apt-get update && \
     ros-kilted-cv-bridge \
     ros-kilted-image-transport \
     ros-kilted-demo-nodes-cpp \
+    ros-kilted-rmw-cyclonedds-cpp \
     && \
     rm -rf /var/lib/apt/lists/*
 
