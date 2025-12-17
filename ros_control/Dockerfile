@@ -1,10 +1,7 @@
 # --- Stage 1: The Base Image ---
-# This has all our apt-get dependencies.
+# (Same as before - strictly runtime dependencies)
 FROM arm64v8/ros:kilted AS base
-
-# Set non-interactive mode and source ROS in bash
 ENV DEBIAN_FRONTEND=noninteractive
-RUN echo "source /opt/ros/kilted/setup.bash" >> ~/.bashrc
 
 # Install all system-level ROS dependencies
 RUN apt-get update && \
@@ -14,34 +11,38 @@ RUN apt-get update && \
     ros-kilted-rosbridge-suite \
     ros-kilted-cv-bridge \
     ros-kilted-image-transport \
-    ros-kilted-demo-nodes-cpp \
     ros-kilted-rmw-cyclonedds-cpp \
-    && \
-    rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/*
 
 # --- Stage 2: The Builder Image ---
-# This layer builds our local source code
+# (Temporary stage - thrown away at the end)
 FROM base AS builder
-
-# SET THE DEFAULT SHELL to /bin/bash
-# This fixes the 'Bad substitution' error
 SHELL ["/bin/bash", "-c"]
 
-# Create a directory for our workspace
+# Install build tools ONLY in this layer (if not in base)
+# Assuming 'colcon' is in the base, otherwise install it here.
+
 WORKDIR /root/ros_ws
 
-# Copy our local workspace code (from the host) into the container
-# THIS IS THE CRITICAL FIX - DO NOT LEAVE THIS COMMENTED
+# Copy local workspace
 COPY ./ros_ws /root/ros_ws
 
-# --- THIS IS YOUR SNIPPET (Corrected) ---
-# Source the ROS environment (now in bash) and build our workspace
+# BUILD CRITICAL FIX:
+# Changed --symlink-install to --merge-install
+# This forces physical file copies so we can detach from source code later.
 RUN . /opt/ros/kilted/setup.bash && \
-    colcon build --symlink-install
+    colcon build --merge-install
 
-# --- Final Setup ---
-# Source our new workspace's setup file as well
+# --- Stage 3: The Runtime Image (NEW) ---
+# Start fresh from the clean base
+FROM base AS runner
+
+# Copy ONLY the install folder from the builder
+# We leave behind /src, /build, and /log
+COPY --from=builder /root/ros_ws/install /root/ros_ws/install
+
+# Setup environment
+RUN echo "source /opt/ros/kilted/setup.bash" >> ~/.bashrc
 RUN echo "source /root/ros_ws/install/setup.bash" >> ~/.bashrc
 
-# The default command
 CMD ["/bin/bash"]
