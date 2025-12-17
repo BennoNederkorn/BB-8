@@ -8,6 +8,7 @@ services:
     container_name: ros_control
     restart: always
     network_mode: "host"            # Host networking allows this node to see the AI node automatically
+    ipc: host
     # This grants the container access to your ESP32.
     # Change '/dev/ttyUSB0' to the *actual* port you found on your Jetson
     #    (e.g., /dev/ttyUSB0, /dev/ttyUSB1, or /dev/ttyACM0).
@@ -23,9 +24,11 @@ services:
     command: tail -f /dev/null
     shm_size: "512m"
     environment:
+      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=kilted
       - ROS_DOMAIN_ID=0
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
 
 
@@ -36,9 +39,11 @@ services:
       dockerfile: Dockerfile
       args:
         BASE_IMAGE: dustynv/ros:humble-pytorch-l4t-r32.7.1
+    image: ai_inference_jetson
     container_name: ai_inference
     restart: always
     network_mode: "host"          # Host networking allows this node to see the ROS node automatically
+    ipc: host
     runtime: nvidia               # Enables container access to the GPU
     privileged: true              # Match run.sh hardware access behavior
     working_dir: /jetson-inference
@@ -70,9 +75,11 @@ services:
       - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
     shm_size: "512m"
     environment:
+      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=0
-      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
