@@ -5,6 +5,14 @@ ARG BASE_IMAGE=dustynv/ros:humble-pytorch-l4t-r32.7.1
 # ==========================================
 FROM ${BASE_IMAGE} AS builder
 
+USER root
+
+# FIX: Refresh the expired ROS GPG key
+RUN apt-get update || true && \
+    apt-get install -y curl gnupg2 lsb-release && \
+    curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key -o /usr/share/keyrings/ros-archive-keyring.gpg && \
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/ros2.list > /dev/null
+
 # 1. Install Build Dependencies
 # We don't clean apt lists here because this layer is discarded
 RUN apt-get update && apt-get install -y \
