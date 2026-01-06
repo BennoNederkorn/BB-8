@@ -1,5 +1,7 @@
 ## idf_component.yml
 dependencies:
+  idf:
+    version: ">=5.0"
   espressif/esp_peer: "*"
   espressif/esp32-camera: "^2.0.0"
   espressif/esp_websocket_client: "~1.5.0"

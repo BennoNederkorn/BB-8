@@ -3,14 +3,25 @@
 #define WIFI_SSID "not.a.virus.exe"
 #define WIFI_PASSWORD "12345678!" // Yes I know, ...
 #define BOARD_ESP32S3_WROOM 1
-#define SIGNAL_SERVER_URL "wss://webrtc-handshakeserver.onrender.com"
+#define SIGNAL_SERVER_URL "wss://80.134.192.148:3000/"
 #define STUN_SERVER_URL "stun:stun.l.google.com:19302"
+
+#include <string>
 
 extern "C"
 {
+#include "esp_timer.h"
+    // #include "esp_random.h"
+    // #include "esp_webrtc_defaults.h"
+    // #include "media_lib_os.h"
+
+#include <string.h>
+#include "esp_system.h"
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/event_groups.h"
+#include "freertos/semphr.h" // Include for Mutex
 #include "driver/gpio.h"
 #include "esp_log.h"
 
@@ -21,9 +32,12 @@ extern "C"
 #include "esp_websocket_client.h"
 #include "cJSON.h"
 #include "esp_peer.h"
+#include "esp_peer_types.h"
 #include "esp_crt_bundle.h"
 #include "esp_peer_default.h"
 #include "camera_pinout.h"
+#include "signaling_client.h" // Include our signaling helper
+#include "esp_sntp.h"
 }
 
 // --- Globals ---
@@ -31,8 +45,12 @@ static const char *TAG = "ESP32S3_WEBRTC_APP";
 static EventGroupHandle_t rtc_event_group;
 const int RTC_CONNECTED_BIT = BIT0;
 const int WIFI_CONNECTED_BIT = BIT1;
-static esp_websocket_client_handle_t ws_client;
+
+static SemaphoreHandle_t peer_mutex = NULL; // Mutex to protect peer handle
 static esp_peer_handle_t peer = NULL;
+static bool is_streaming = false;
+static uint16_t video_stream_id = 0;
+
 #if ESP_CAMERA_SUPPORTED
 static camera_config_t camera_config = {
     .pin_pwdn = CAM_PIN_PWDN,
@@ -67,6 +85,7 @@ static camera_config_t camera_config = {
     .fb_location = CAMERA_FB_IN_PSRAM,   // forces the image buffer to use larger External RAM.
     .grab_mode = CAMERA_GRAB_WHEN_EMPTY, // Buffer is only filled with new camera data if the CPU has finished reading the previous data.
     // .grab_mode = CAMERA_GRAB_LATEST;   // Captures the latest frame, discarding older ones.
+    .sccb_i2c_port = -1,
 };
 #endif
 
@@ -75,28 +94,57 @@ static void init_nvs(void);
 static void wifi_init_sta(void);
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 static void camera_init(void);
+static void setup_time(void);
 static void print_camera_image_hex(void);
 static void signaling_server_connect(void);
-static void websocket_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data);
+static void setup_webrtc_peer(void);
 static void video_stream_task(void *pvParameters);
-static int on_peer_state_change(esp_peer_state_t state, void *ctx);
-static int on_peer_msg(esp_peer_msg_t *msg, void *ctx);
-static int on_peer_data(esp_peer_data_frame_t *frame, void *ctx);
+static void webrtc_main_task(void *pvParameters); // New task prototype
+
+// WebRTC Callbacks
+static int peer_msg_handler(esp_peer_msg_t *msg, void *ctx);
+static int peer_state_handler(esp_peer_state_t state, void *ctx);
+static int peer_channel_open_handler(esp_peer_data_channel_info_t *ch, void *ctx);
+
+// Helper to send JSON
+static void send_signaling_json(const char *type, const char *payload_str, cJSON *payload_obj);
+
+// static void replace_all(std::string &str, const std::string &from, const std::string &to)
+// {
+//     if (from.empty())
+//         return;
+//     size_t start_pos = 0;
+//     while ((start_pos = str.find(from, start_pos)) != std::string::npos)
+//     {
+//         str.replace(start_pos, from.length(), to);
+//         start_pos += to.length();
+//     }
+// }
 
 // --- Main Application ---
 extern "C" void app_main(void)
 {
     ESP_LOGI(TAG, "start app_main...");
+
+    // Enable verbose logging for the WebRTC peer to debug state machine issues
+    esp_log_level_set("esp_peer", ESP_LOG_VERBOSE);
+    esp_log_level_set("PEER_DEF", ESP_LOG_VERBOSE); // Enable logs for the default implementation
+
     ESP_LOGI(TAG, "init the Non-Volatile Storage...");
     init_nvs();
+
+    // Create mutex for thread safety
+    peer_mutex = xSemaphoreCreateMutex();
 
     ESP_LOGI(TAG, "start connecting to wifi...");
     rtc_event_group = xEventGroupCreate();
     wifi_init_sta();
-
     ESP_LOGI(TAG, "waiting for WiFi...");
     xEventGroupWaitBits(rtc_event_group, WIFI_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
     ESP_LOGI(TAG, "WiFi connected!");
+
+    ESP_LOGI(TAG, "Setting up time for DTLS...");
+    setup_time();
 
     gpio_reset_pin(BLINK_GPIO);
     gpio_set_direction(BLINK_GPIO, GPIO_MODE_OUTPUT_OD); // Set the GPIO as an OPEN-DRAIN output
@@ -107,18 +155,25 @@ extern "C" void app_main(void)
     {
         gpio_set_level(BLINK_GPIO, 0);
         ESP_LOGI(TAG, "LED OFF");
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
 
         gpio_set_level(BLINK_GPIO, 1);
         ESP_LOGI(TAG, "LED ON");
-        vTaskDelay(500 / portTICK_PERIOD_MS);
+        vTaskDelay(200 / portTICK_PERIOD_MS);
     }
 
     ESP_LOGI(TAG, "starting the camera...");
     camera_init();
-    // print_camera_image_hex();
+    print_camera_image_hex();
+
     ESP_LOGI(TAG, "start connecting to the signaling server...");
     signaling_server_connect();
+
+    // Start the video task (it will wait for is_streaming flag)
+    xTaskCreate(video_stream_task, "video_stream", 8192, NULL, 5, NULL);
+
+    // Start the WebRTC engine task
+    xTaskCreate(webrtc_main_task, "webrtc_main", 8192, NULL, 5, NULL);
 }
 
 /*
@@ -162,7 +217,10 @@ static void wifi_init_sta(void)
 
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA)); // set client mode
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
-    ESP_ERROR_CHECK(esp_wifi_start()); // turn on WiFi radio
+    // esp_wifi_start() returns almost immediately—it
+    // it does not wait for a connection to be established.
+    // It just turns on the WiFi radio.
+    ESP_ERROR_CHECK(esp_wifi_start());
 }
 
 static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
@@ -185,6 +243,26 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     }
 }
 
+static void setup_time(void)
+{
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "pool.ntp.org");
+    esp_sntp_init();
+
+    time_t now = 0;
+    struct tm timeinfo = {0};
+    int retry = 0;
+    const int retry_count = 15;
+    while (timeinfo.tm_year < (2016 - 1900) && ++retry < retry_count)
+    {
+        ESP_LOGI(TAG, "Waiting for system time to be set... (%d/%d)", retry, retry_count);
+        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        time(&now);
+        localtime_r(&now, &timeinfo);
+    }
+    ESP_LOGI(TAG, "Time set: %s", asctime(&timeinfo));
+}
+
 // --- OV2640 Camera ---
 static void camera_init(void)
 {
@@ -202,20 +280,37 @@ static void camera_init(void)
 
 static void print_camera_image_hex(void)
 {
+    // Warm up the camera: Skip the first few frames to allow Auto White Balance (AWB)
+    // and Auto Exposure Control (AEC) to settle.
+    ESP_LOGI(TAG, "Warming up camera (skipping frames)...");
+    for (int i = 0; i < 10; i++)
+    {
+        camera_fb_t *temp_fb = esp_camera_fb_get();
+        if (temp_fb)
+        {
+            esp_camera_fb_return(temp_fb);
+        }
+    }
     camera_fb_t *fb = esp_camera_fb_get();
     if (!fb)
     {
         ESP_LOGE(TAG, "Camera capture failed - no frame buffer returned");
         return;
     }
-    ESP_LOGI(TAG, "Image captured! Size: %d bytes, Format: %d", fb->len, fb->format);
-    ESP_LOGI(TAG, "\n--- START JPEG HEX ---\n");
-    for (size_t i = 0; i < fb->len; i++)
-    {
-        // Print 02x (e.g., "A5") without spaces to make it compact
-        printf("%02x", fb->buf[i]);
-    }
-    ESP_LOGI(TAG, "\n--- END JPEG HEX ---\n");
+    ESP_LOGI(TAG, "Image captured!");
+    ESP_LOGI(TAG, "buffer size: %d bytes", fb->len);
+    ESP_LOGI(TAG, "width x height: %dx%d", fb->width, fb->height);
+    ESP_LOGI(TAG, "pixel data format: %d", fb->format);
+    // printf("--- START JPEG HEX ---\n");
+    // for (size_t i = 0; i < fb->len; i++)
+    // {
+    //     // Print 02x (e.g., "A5") without spaces to make it compact
+    //     // uint8_t * buf
+    //     printf("%02X", fb->buf[i]);
+    //     if ((i + 1) % 32 == 0)
+    //         printf("\n");
+    // }
+    // printf("\n--- END JPEG HEX ---\n");
 
     esp_camera_fb_return(fb);
 }
@@ -224,260 +319,326 @@ static void print_camera_image_hex(void)
 // configures and initiates a secure, auto-reconnecting WebSocket connection to the signaling server.
 static void signaling_server_connect(void)
 {
-    ESP_LOGI(TAG, "Connecting to: %s", SIGNAL_SERVER_URL);
+    signaling_client_start(SIGNAL_SERVER_URL);
+}
 
-    esp_websocket_client_config_t ws_cfg = {};
-    memset(&ws_cfg, 0, sizeof(ws_cfg)); // zero-out the structure to ensure all fields start with a known value.
+// --- WebRTC Logic ---
 
-    ws_cfg.uri = SIGNAL_SERVER_URL;
-    // configure security for a secure WebSocket (WSS) connection.
-    // This attaches a bundle of trusted root certificates to verify the server's identity.
-    ws_cfg.crt_bundle_attach = esp_crt_bundle_attach;
-    ws_cfg.network_timeout_ms = 30000;
-    ws_cfg.buffer_size = 8192;             // Increase buffer size to 8KB to reduce fragmentation
-    ws_cfg.disable_auto_reconnect = false; // enable automatic reconnection
+static void setup_webrtc_peer(void)
+{
+    ESP_LOGI(TAG, "LOCK");
+    xSemaphoreTake(peer_mutex, portMAX_DELAY); // Lock
 
-    ESP_LOGI(TAG, "WebSocket config: timeout=%d, skip_cert=%d",
-             ws_cfg.network_timeout_ms, ws_cfg.skip_cert_common_name_check);
-
-    ws_client = esp_websocket_client_init(&ws_cfg); // `ws_client` is a global handle to the client instance.
-    if (ws_client == NULL)
+    if (peer)
     {
-        ESP_LOGE(TAG, "Failed to initialize WebSocket client");
+        ESP_LOGI(TAG, "destroy existing peer");
+        esp_peer_close(peer);
+        peer = NULL;
+        video_stream_id = 0;
+    }
+
+    // Setup STUN server to help devices behind NATs find each other.
+    esp_peer_ice_server_cfg_t ice_server = {};
+    ice_server.stun_url = (char *)STUN_SERVER_URL;
+
+    esp_peer_cfg_t peer_cfg = {
+        .server_lists = &ice_server,                       // Should set to actual stun/turn servers
+        .server_num = 1,                                   //  Number of ICE server
+        .role = ESP_PEER_ROLE_CONTROLLED,                  // The ESP32 is waiting for an offer.
+        .ice_trans_policy = ESP_PEER_ICE_TRANS_POLICY_ALL, // Gather all types of connection candidates
+        // .video_info = {
+        //     // H.264 is preferred for smooth streaming over Wi-Fi.
+        //     // MJPEG is an alternative if the camera only supports JPEG.
+        //     .codec = ESP_PEER_VIDEO_CODEC_H264,
+        //     .width = 320,  // Resolution (e.g., QVGA or VGA)
+        //     .height = 240,
+        //     .fps = 15,     // Frame rate (15-20 is typical for ESP32)
+        //     .dir = ESP_PEER_MEDIA_DIR_SEND_ONLY, // We usually don't see the user, only send video.
+        // },
+        .audio_dir = ESP_PEER_MEDIA_DIR_NONE, // Not using RTP audio
+        .video_dir = ESP_PEER_MEDIA_DIR_NONE, // Not using RTP video
+        .no_auto_reconnect = false,
+        .enable_data_channel = true,    // The video is sent over the data channel, because binary images(MJPEG) cannot be encoded over the standard Video (RTP) track.
+        .manual_ch_create = false,      // The HMI (Offerer) will create the Data channel labled as TODO. The ESP32S3 will accept it
+        .ctx = NULL,                    // user context needed??? NULL &peers[idx] or rtc->ice_role
+        .on_state = peer_state_handler, // For connection state changes.
+        .on_msg = peer_msg_handler,     // For SDP answers and ICE candidates.
+        // .on_video_info = peer_video_info_handler,
+        // .on_audio_info = peer_audio_info_handler,
+        // .on_audio_data = peer_audio_data_handler,
+        // .on_video_data = peer_video_data_handler,
+        .on_channel_open = peer_channel_open_handler,
+        // .on_data = peer_data_handler, // Implement if receiving data from Angular
+        // .on_channel_close = peer_channel_close_handler,
+    };
+
+    // Get default implementation (required for 1.2.6)
+    const esp_peer_ops_t *ops = esp_peer_get_default_impl();
+
+    // Initialize the peer
+    ESP_ERROR_CHECK(esp_peer_open(&peer_cfg, ops, &peer));
+    ESP_LOGI(TAG, "Peer initialized successfully");
+
+    xSemaphoreGive(peer_mutex); // Unlock
+    ESP_LOGI(TAG, "UNLOCK");
+}
+
+// --- Callbacks ---
+
+// 1. Outgoing Signaling: ESP32 generated SDP or Candidate -> Send to Node.js
+static int peer_msg_handler(esp_peer_msg_t *msg, void *ctx) // TODO gemini deep research
+{
+    ESP_LOGI(TAG, "peer_msg_handler was called");
+    if (msg->type == ESP_PEER_MSG_TYPE_SDP)
+    {
+        ESP_LOGI(TAG, "SDP Content: %s", (char *)msg->data); // msg->data contains the SDP string
+
+        send_signaling_json("answer", (char *)msg->data, NULL);
+
+        // // 1. Convert raw data to std::string for safe manipulation
+        // std::string sdp_str((char *)msg->data, msg->size);
+
+        // // 2. FORENSIC FIX: Force DTLS Active Role
+        // // Replace 'setup:passive' with 'setup:active' to break the handshake deadlock.
+        // replace_all(sdp_str, "a=setup:passive", "a=setup:active");
+
+        // ESP_LOGI(TAG, "Munged SDP Content (Snippet):...%s...",
+        //          sdp_str.substr(sdp_str.find("a=setup"), 20).c_str());
+
+        // char *sdp_char_pointer = const_cast<char *>(sdp_str.c_str());
+
+        // // 4. Send to Signaling Server (WebSocket)
+        // send_signaling_json("answer", sdp_char_pointer, NULL);
+    }
+    else if (msg->type == ESP_PEER_MSG_TYPE_CANDIDATE)
+    {
+        // NOTE: To match your JSON schema {candidate, sdpMid, sdpMLineIndex},
+        // we might need to parse the string or check if esp_peer provides a struct.
+        // For now, we send the raw string. Angular should handle parsing or we adjust schema.
+
+        // self-defined Signaling Message Schema
+        // | Msg Type  | Direction | Payload Structure                | Description                                     |
+        // | --------- | --------- | -------------------------------- | ----------------------------------------------- |
+        // | offer     | UI -> ESP | {"sdp": "v=0..."}                | The Session Description Protocol Offer string.  |
+        // | answer    | ESP -> UI | {"sdp": "v=0..."}                | The Session Description Protocol Answer string. |
+        // | candidate | Bi-direct | {"candidate": "...", "sdpMid": "0", "sdpMLineIndex": 0} | An ICE Candidate object. |
+
+        cJSON *payload = cJSON_CreateObject();
+        cJSON_AddStringToObject(payload, "candidate", (char *)msg->data);
+        // Defaults if not parsed
+        cJSON_AddStringToObject(payload, "sdpMid", "0");
+        cJSON_AddNumberToObject(payload, "sdpMLineIndex", 0);
+
+        send_signaling_json("candidate", NULL, payload);
+    }
+    return 0;
+}
+
+// 2. State Change
+static int peer_state_handler(esp_peer_state_t state, void *ctx)
+{
+    switch (state)
+    {
+    case ESP_PEER_STATE_CLOSED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_CLOSED)", state);
+        break;
+    case ESP_PEER_STATE_DISCONNECTED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_DISCONNECTED)", state);
+        break;
+    case ESP_PEER_STATE_NEW_CONNECTION:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_NEW_CONNECTION)", state);
+        break;
+    case ESP_PEER_STATE_PAIRING:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_PAIRING)", state);
+        break;
+    case ESP_PEER_STATE_PAIRED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_PAIRED)", state);
+        break;
+    case ESP_PEER_STATE_CONNECTING:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_CONNECTING)", state);
+        break;
+    case ESP_PEER_STATE_CONNECTED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_CONNECTED)", state);
+        break;
+    case ESP_PEER_STATE_CONNECT_FAILED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_CONNECT_FAILED)", state);
+        break;
+    case ESP_PEER_STATE_DATA_CHANNEL_CONNECTED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_DATA_CHANNEL_CONNECTED)", state);
+        break;
+    case ESP_PEER_STATE_DATA_CHANNEL_OPENED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_DATA_CHANNEL_OPENED)", state);
+        break;
+    case ESP_PEER_STATE_DATA_CHANNEL_CLOSED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_DATA_CHANNEL_CLOSED)", state);
+        break;
+    case ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED:
+        ESP_LOGI(TAG, "Peer state changed: %d (ESP_PEER_STATE_DATA_CHANNEL_DISCONNECTED)", state);
+        break;
+    default:
+        break;
+    }
+
+    // Note: Streaming starts when Data Channel opens, not just Peer Connection
+    if (state != ESP_PEER_STATE_CONNECTED && state != ESP_PEER_STATE_DATA_CHANNEL_OPENED)
+    {
+        is_streaming = false;
+        gpio_set_level(BLINK_GPIO, 0);
+    }
+    return 0;
+}
+
+// 3. Data Channel Open
+static int peer_channel_open_handler(esp_peer_data_channel_info_t *ch, void *ctx)
+{
+    ESP_LOGI(TAG, "Data Channel Opened! Label: %s, ID: %d", ch->label, ch->stream_id);
+    video_stream_id = ch->stream_id;
+    is_streaming = true;
+    gpio_set_level(BLINK_GPIO, 1);
+    return 0;
+}
+
+static void send_signaling_json(const char *type, const char *payload_str, cJSON *payload_obj)
+{
+    ESP_LOGI(TAG, "send signaling json with type: %s", type);
+    cJSON *root = cJSON_CreateObject();
+    cJSON_AddStringToObject(root, "type", type);
+    if (payload_str)
+        cJSON_AddStringToObject(root, "payload", payload_str);
+    if (payload_obj)
+        cJSON_AddItemToObject(root, "payload", payload_obj);
+    char *json = cJSON_PrintUnformatted(root);
+    signaling_send_message(json);
+    free(json);
+    cJSON_Delete(root);
+}
+
+// --- Signaling Message Handler ---
+// This function is called by signaling_client.c when a full JSON message is received
+extern "C" void handle_signaling_message(cJSON *root)
+{
+    ESP_LOGI(TAG, "start handling the signaling message");
+    cJSON *type_item = cJSON_GetObjectItem(root, "type");
+    if (!type_item || !cJSON_IsString(type_item))
+    {
+        ESP_LOGW(TAG, "Received JSON has no 'type' field.");
         return;
     }
 
-    // Register an event handler to tell the WebSocket client to call `websocket_event_handler` for any event
-    // (e.g., connected, received data, disconnected).
-    esp_websocket_register_events(ws_client, WEBSOCKET_EVENT_ANY, websocket_event_handler, ws_client);
+    const char *type = type_item->valuestring;
+    cJSON *payload_item = cJSON_GetObjectItem(root, "payload");
 
-    // Start the client: This begins the non-blocking connection attempt.
-    // The function will return immediately, and the connection status will be reported later through the event handler.
-    esp_err_t err = esp_websocket_client_start(ws_client);
-    ESP_LOGI(TAG, "WebSocket start result: %d (%s)", err, esp_err_to_name(err));
-}
-
-// This is the central command post for WebRTC signaling. It listens for two main commands from the signaling server:
-// - offer: A request from a browser to start a new WebRTC session.
-//   The handler responds by creating and configuring a local esp_peer instance and feeding it the offer.
-// - candidate: A suggestion for a network path to connect directly to the browser.
-//   The handler passes this information to the esp_peer instance to help it establish the connection.
-static void websocket_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
-{
-    // Static buffer to reassemble fragmented messages
-    static char *reassembly_buffer = NULL;
-    static int reassembly_buffer_len = 0;
-    static int total_payload_len = 0;
-    esp_websocket_event_data_t *data = (esp_websocket_event_data_t *)event_data;
-
-    switch (event_id)
+    if (strcmp(type, "offer") == 0)
     {
-    case WEBSOCKET_EVENT_CONNECTED: // Connection Established
-        ESP_LOGI(TAG, "Signaling connected");
-        break;
+        ESP_LOGI(TAG, "Received Offer");
 
-    case WEBSOCKET_EVENT_DATA: // Data Received
-    {
-        // ESP_LOGI(TAG, "data->payload_len: %d bytes.", data->payload_len);
-        // ESP_LOGI(TAG, "data->data_len: %d bytes.", data->data_len);
-        // ESP_LOGI(TAG, "data->payload_offset: %d bytes.", data->payload_offset);
-        // ESP_LOGI(TAG, "data->data_ptr: %d bytes.", data->data_ptr);
-        // Ignore empty messages, which can be sent as keep-alives.
-        if (data->payload_len == 0 && data->data_len == 0)
+        // 1. Initialize Peer (if not already)
+        setup_webrtc_peer();
+
+        // 2. Feed Offer to Peer
+        if (cJSON_IsString(payload_item))
         {
-            ESP_LOGI(TAG, "Received empty message, ignoring.");
-            return;
-        }
-        // ESP_LOGI(TAG, "Received data: %.*s", data);
-
-        // Append the new data to the reassembly buffer
-        char *temp_buffer = (char *)realloc(reassembly_buffer, reassembly_buffer_len + data->data_len + 1);
-        if (!temp_buffer)
-        {
-            ESP_LOGE(TAG, "Failed to allocate memory for reassembly buffer");
-            free(reassembly_buffer);
-            reassembly_buffer = NULL;
-            reassembly_buffer_len = 0;
-            return;
-        }
-        reassembly_buffer = temp_buffer;
-
-        memcpy(reassembly_buffer + reassembly_buffer_len, data->data_ptr, data->data_len);
-        reassembly_buffer_len += data->data_len;
-        reassembly_buffer[reassembly_buffer_len] = '\0'; // Null-terminate the buffer
-
-        // A simple check to see if the message might be a complete JSON object.
-        // cJSON_Parse will tell us for sure.
-        char *last_char = reassembly_buffer + reassembly_buffer_len - 1;
-        if (*last_char != '}')
-        {
-            ESP_LOGI(TAG, "JSON doesn't end with '}', assuming it's a fragment. Buffer size: %d", reassembly_buffer_len);
-            return;
-        }
-
-        char *msg = reassembly_buffer;
-        ESP_LOGI(TAG, "Processing complete message of %d bytes", reassembly_buffer_len);
-        ESP_LOGI(TAG, "Message: %s", msg);
-
-        // Parse the string as a JSON object
-        cJSON *json = cJSON_Parse(msg);
-        if (json == NULL)
-        {
-            ESP_LOGE(TAG, "Failed to parse received data as JSON: %s", msg);
-            // If parsing fails, it might be because the message is not yet complete.
-            // We will wait for the next packet, unless the message is getting too large.
-            if (reassembly_buffer_len > 16384)
-            { // Safety break for huge invalid messages
-                free(reassembly_buffer);
-                reassembly_buffer = NULL;
-                reassembly_buffer_len = 0;
-            }
-            break;
-        }
-
-        // Check if the JSON contains an "offer" from a HMI
-        if (cJSON_HasObjectItem(json, "offer"))
-        {
-            if (peer != NULL)
+            ESP_LOGI(TAG, "LOCK");
+            xSemaphoreTake(peer_mutex, portMAX_DELAY); // Lock before using peer
+            if (peer)
             {
-                ESP_LOGW(TAG, "Got OFFER, but peer already exists. Closing old peer.");
-                esp_peer_close(peer);
-                peer = NULL;
-            }
+                esp_peer_msg_t msg = {
+                    .type = ESP_PEER_MSG_TYPE_SDP,
+                    .data = (uint8_t *)payload_item->valuestring,
+                    .size = (int)strlen(payload_item->valuestring) + 1}; // Include null terminator
 
-            ESP_LOGI(TAG, "Got OFFER, creating new peer...");
-            {
-                // Setup STUN server to help devices behind NATs find each other.
-                esp_peer_ice_server_cfg_t ice_server = {};
-                ice_server.stun_url = (char *)STUN_SERVER_URL;
+                ESP_LOGI(TAG, "Feeding SDP to Stack (len=%d): %s", msg.size, (char *)msg.data);
 
-                // Configure peer as answerer (controlled/server role)
-                esp_peer_cfg_t cfg = {};
-                cfg.server_lists = &ice_server;
-                cfg.server_num = 1;
-                cfg.role = ESP_PEER_ROLE_CONTROLLED; // The ESP32 is waiting for an offer.
-                cfg.ice_trans_policy = ESP_PEER_ICE_TRANS_POLICY_ALL;
-                cfg.enable_data_channel = true; // video should be send over the data channel
-                cfg.manual_ch_create = false;   // Let the library create the data channel automatically
-                cfg.ctx = NULL;
-                // set up callbacks to handle peer events
-                cfg.on_state = on_peer_state_change;     // For connection state changes.
-                cfg.on_msg = on_peer_msg;                // For SDP answers and ICE candidates.
-                cfg.on_data = on_peer_data;              // For data received on the data channel.
-                cfg.video_dir = ESP_PEER_MEDIA_DIR_NONE; // Not using RTP video
-                cfg.audio_dir = ESP_PEER_MEDIA_DIR_NONE; // Not using RTP audio
-
-                // Create peer connection
-                int ret = esp_peer_open(&cfg, esp_peer_get_default_impl(), &peer);
-                if (ret != ESP_PEER_ERR_NONE || peer == NULL)
+                esp_err_t ret = esp_peer_send_msg(peer, &msg);
+                if (ret != ESP_OK)
                 {
-                    ESP_LOGE(TAG, "Failed to create peer: %d", ret);
-                    cJSON_Delete(json);
-                    break;
-                }
-            }
-
-            // Extract the offer SDP (Session Description Protocol) from the JSON
-            // and send it to the newly created peer instance. The peer will use this to generate its own "answer" SDP.
-            cJSON *offer_item = cJSON_GetObjectItem(json, "offer");
-            if (!cJSON_IsString(offer_item))
-            {
-                ESP_LOGE(TAG, "Offer JSON does not contain a valid SDP string!");
-                cJSON_Delete(json);
-                break;
-            }
-            char *offer_sdp = offer_item->valuestring;
-            esp_peer_msg_t offer_msg = {};
-            offer_msg.type = ESP_PEER_MSG_TYPE_SDP;
-            offer_msg.data = (uint8_t *)offer_sdp;
-            offer_msg.size = strlen(offer_sdp);
-
-            ESP_LOGI(TAG, "Send SDP offer to peer with size %d", offer_msg.size);
-            int ret = esp_peer_send_msg(peer, &offer_msg);
-            if (ret != ESP_PEER_ERR_NONE)
-            {
-                ESP_LOGE(TAG, "Failed to send offer: %d", ret);
-            }
-        }
-        // An "else if" is crucial here. A message is either an offer OR a candidate, not both.
-        else if (cJSON_HasObjectItem(json, "candidate"))
-        {
-            ESP_LOGI(TAG, "Got ICE candidate");
-            // If a peer connection exists, forward the ICE candidate information to HMI.
-            // The ICE candidates describe possible network paths for the direct peer-to-peer connection.
-            if (peer == NULL)
-            {
-                ESP_LOGW(TAG, "Peer not created yet, dropping ICE candidate.");
-            }
-            else
-            {
-                cJSON *cand_item = cJSON_GetObjectItem(json, "candidate");
-                // A `null` candidate signals the end of candidates from the peer.
-                // An object candidate is a real candidate.
-                if (cJSON_IsNull(cand_item))
-                {
-                    ESP_LOGI(TAG, "Received null ICE candidate, signaling end of candidates.");
-                    esp_peer_msg_t cand_msg = {};
-                    cand_msg.type = ESP_PEER_MSG_TYPE_CANDIDATE;
-                    cand_msg.data = NULL; // A null data pointer signals the end of candidates to esp_peer
-                    cand_msg.size = 0;
-                    esp_peer_send_msg(peer, &cand_msg);
-                }
-                else if (cJSON_IsObject(cand_item))
-                {
-                    char *cand_str = cJSON_PrintUnformatted(cand_item);
-                    esp_peer_msg_t cand_msg = {};
-                    cand_msg.type = ESP_PEER_MSG_TYPE_CANDIDATE;
-                    cand_msg.data = (uint8_t *)cand_str;
-                    cand_msg.size = strlen(cand_str);
-
-                    ESP_LOGI(TAG, "Sending ICE candidate to peer with size %d", cand_msg.size);
-                    esp_peer_send_msg(peer, &cand_msg);
-                    free(cand_str);
+                    ESP_LOGE(TAG, "Failed to process Offer: %s", esp_err_to_name(ret));
                 }
                 else
                 {
-                    // This handles the case where the candidate might be null, which can happen at the end of gathering.
-                    ESP_LOGI(TAG, "Received a null or invalid ICE candidate, ignoring.");
+                    ESP_LOGI(TAG, "Offer passed to ESP Peer stack");
+                    ret = esp_peer_new_connection(peer);
+
+                    if (ret != ESP_OK)
+                    {
+                        ESP_LOGE(TAG, "Failed to initiate Answer generation: %s", esp_err_to_name(ret));
+                    }
+                    else
+                    {
+                        ESP_LOGI(TAG, "Answer generation requested.");
+                    }
                 }
+                // Do I need to call this function in esp_peer.h?
+                // esp_err_t esp_peer_set_remote_description(esp_peer_handle_t handle,
+                //                                           esp_peer_sdp_type_t type,
+                //                                           char *sdp_text,
+                //                                           int len);
             }
+            xSemaphoreGive(peer_mutex); // Unlock
+            ESP_LOGI(TAG, "UNLOCK");
         }
-        cJSON_Delete(json);
-        // Free the buffer now that the message has been processed
-        free(reassembly_buffer);
-        reassembly_buffer = NULL;
-        reassembly_buffer_len = 0;
-        total_payload_len = 0;
-        break;
     }
-
-    case WEBSOCKET_EVENT_DISCONNECTED: // Connection Lost
-        ESP_LOGW(TAG, "Signaling disconnected");
-        break;
-
-    case WEBSOCKET_EVENT_CLOSED:
-        ESP_LOGI(TAG, "WebSocket connection closed. Cleaning up reassembly buffer.");
-        if (reassembly_buffer)
+    else if (strcmp(type, "candidate") == 0)
+    {
+        ESP_LOGI(TAG, "Received Candidate");
+        xSemaphoreTake(peer_mutex, portMAX_DELAY); // Lock
+        if (peer == NULL)
         {
-            free(reassembly_buffer);
-            reassembly_buffer = NULL;
+            xSemaphoreGive(peer_mutex);
+            return;
         }
-        break;
-    case WEBSOCKET_EVENT_ERROR: // An Error Occurred
-        ESP_LOGE(TAG, "Signaling error");
-        break;
+
+        // The peer stack expects a JSON object with candidate, sdpMid, and sdpMLineIndex.
+        // We should pass the whole payload object as a string.
+        char *candidate_payload_str = cJSON_PrintUnformatted(payload_item);
+        if (candidate_payload_str)
+        {
+            ESP_LOGI(TAG, "Feeding Candidate to Stack (len=%d): %s", strlen(candidate_payload_str) + 1, candidate_payload_str);
+            esp_peer_msg_t msg = {.type = ESP_PEER_MSG_TYPE_CANDIDATE, .data = (uint8_t *)candidate_payload_str, .size = (int)strlen(candidate_payload_str) + 1}; // Include null terminator
+            esp_err_t ret = esp_peer_send_msg(peer, &msg);
+            if (ret != ESP_OK)
+            {
+                ESP_LOGW(TAG, "Failed to add candidate: %s", esp_err_to_name(ret));
+            }
+            else
+            {
+                ESP_LOGI(TAG, "Candidate passed to ESP Peer stack");
+                // ret = esp_peer_new_connection(peer);
+                // if (ret != ESP_OK)
+                // {
+                //     ESP_LOGE(TAG, "Failed to initiate Answer generation: %s", esp_err_to_name(ret));
+                // }
+                // else
+                // {
+                //     ESP_LOGI(TAG, "Answer generation requested.");
+                // }
+            }
+            free(candidate_payload_str);
+        }
+        else
+        {
+            ESP_LOGE(TAG, "Failed to stringify candidate payload");
+        }
+        xSemaphoreGive(peer_mutex); // Unlock
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Received Something else");
     }
 }
 
+// --- Video Task ---
 static void video_stream_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Video task started. Waiting for connection...");
-    xEventGroupWaitBits(rtc_event_group, RTC_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
-    ESP_LOGI(TAG, "Streaming started!");
+    // We use a specific label for the video data channel.
+    // Note: In standard WebRTC, the initiator (Angular) usually creates the Data Channel.
+    // However, we can just send data to the first open channel or a specific one.
+    // esp_peer usually handles the underlying channel management.
+    ESP_LOGI(TAG, "started video_stream_task...");
 
     while (1)
     {
-        if (xEventGroupGetBits(rtc_event_group) & RTC_CONNECTED_BIT)
+        if (is_streaming && peer && video_stream_id > 0)
         {
             camera_fb_t *fb = esp_camera_fb_get();
             if (!fb)
@@ -487,144 +648,58 @@ static void video_stream_task(void *pvParameters)
                 continue;
             }
 
-            // Send video frame via data channel
+            // Send via Data Channel (MJPEG)
             esp_peer_data_frame_t frame = {
-                .type = ESP_PEER_DATA_CHANNEL_DATA, // Use DATA type for binary JPEG data
-                .stream_id = 0,
+                .type = ESP_PEER_DATA_CHANNEL_DATA,
+                .stream_id = video_stream_id,
                 .data = fb->buf,
                 .size = (int)fb->len};
 
-            int ret = esp_peer_send_data(peer, &frame);
-            if (ret != ESP_PEER_ERR_NONE)
+            esp_err_t ret = esp_peer_send_data(peer, &frame);
+            if (ret != ESP_OK)
             {
-                ESP_LOGW(TAG, "Send failed: %d", ret);
+                ESP_LOGW(TAG, "Failed to send frame: %s", esp_err_to_name(ret));
             }
 
             esp_camera_fb_return(fb);
-            vTaskDelay(pdMS_TO_TICKS(33)); // ~30fps
+
+            // Frame rate control (e.g., ~15 FPS)
+            vTaskDelay(pdMS_TO_TICKS(66));
         }
         else
         {
-            ESP_LOGW(TAG, "Disconnected, waiting...");
-            xEventGroupWaitBits(rtc_event_group, RTC_CONNECTED_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+            // Idle wait if not streaming
+            vTaskDelay(pdMS_TO_TICKS(500));
         }
     }
 }
 
-// --- ESP Peer Callbacks ---
-static int on_peer_state_change(esp_peer_state_t state, void *ctx)
+// --- WebRTC Engine Task ---
+static void webrtc_main_task(void *pvParameters)
 {
-    ESP_LOGI(TAG, "Peer state: %d", state);
-
-    const char *state_str;
-    switch (state)
+    ESP_LOGI(TAG, "WebRTC Engine Task Started");
+    while (1)
     {
-    case ESP_PEER_STATE_NEW_CONNECTION:
-        state_str = "NEW";
-        break;
-    case ESP_PEER_STATE_CONNECTING:
-        state_str = "CONNECTING";
-        break;
-    case ESP_PEER_STATE_CONNECTED:
-        state_str = "CONNECTED";
-        break;
-    case ESP_PEER_STATE_DISCONNECTED:
-        state_str = "DISCONNECTED";
-        break;
-    case ESP_PEER_STATE_CONNECT_FAILED:
-        state_str = "FAILED";
-        break;
-    case ESP_PEER_STATE_CLOSED:
-        state_str = "CLOSED";
-        break;
-    case ESP_PEER_STATE_DATA_CHANNEL_OPENED:
-        state_str = "DATA_CHANNEL_OPENED (Success!)";
-        break;
-    default:
-        state_str = "UNKNOWN";
-        break;
-    }
-    ESP_LOGI(TAG, ">> PEER STATE CHANGE: %s", state_str);
-
-    switch (state)
-    {
-    case ESP_PEER_STATE_DATA_CHANNEL_OPENED:
-        ESP_LOGI(TAG, "Data channel OPENED - Starting video!");
-        xEventGroupSetBits(rtc_event_group, RTC_CONNECTED_BIT);
-        // Start video streaming
-        xTaskCreate(video_stream_task, "video", 8192, NULL, 5, NULL);
-        break;
-
-    case ESP_PEER_STATE_DISCONNECTED:
-    case ESP_PEER_STATE_CLOSED:
-        ESP_LOGW(TAG, "Disconnected");
-        xEventGroupClearBits(rtc_event_group, RTC_CONNECTED_BIT);
-        if (peer)
+        // We only lock if we are going to do work, to avoid blocking the signaling task unnecessarily
+        if (xSemaphoreTake(peer_mutex, pdMS_TO_TICKS(10)) == pdTRUE)
         {
-            esp_peer_close(peer);
-            peer = NULL;
+            if (peer)
+            {
+                esp_err_t ret = esp_peer_main_loop(peer);
+                if (ret != ESP_OK)
+                {
+                    ESP_LOGW(TAG, "esp_peer_main_loop error: %s", esp_err_to_name(ret));
+                }
+            }
+            xSemaphoreGive(peer_mutex);
         }
-        break;
 
-    default:
-        break;
+        // Optional: Check stack usage to ensure we aren't overflowing
+        // if (uxTaskGetStackHighWaterMark(NULL) < 500) {
+        //     ESP_LOGW(TAG, "WebRTC Task Stack Low: %d", uxTaskGetStackHighWaterMark(NULL));
+        // }
+
+        // Yield to let other tasks run. 10-20ms is usually a good balance for WebRTC.
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-
-    return 0;
-}
-
-// 8.a: Send SDP Answer to the Signalling Server
-static int on_peer_msg(esp_peer_msg_t *msg, void *ctx)
-{
-    if (!msg || !msg->data)
-    {
-        ESP_LOGI(TAG, "Failed to send SDP answer or ICE candidate to signaling server");
-        return -1;
-    }
-
-    ESP_LOGI(TAG, "Peer message type: %d", msg->type);
-
-    if (msg->type == ESP_PEER_MSG_TYPE_SDP)
-    {
-        // This is the SDP answer generated by esp_peer
-        ESP_LOGI(TAG, "Sending SDP answer to signaling server");
-
-        cJSON *answer_json = cJSON_CreateObject();
-        cJSON_AddStringToObject(answer_json, "answer", (const char *)msg->data);
-        char *answer_str = cJSON_PrintUnformatted(answer_json);
-        ESP_LOGI(TAG, "SDP answer: %s", answer_str);
-
-        esp_websocket_client_send_text(ws_client, answer_str, strlen(answer_str), portMAX_DELAY);
-
-        cJSON_Delete(answer_json);
-        free(answer_str);
-    }
-    else if (msg->type == ESP_PEER_MSG_TYPE_CANDIDATE)
-    {
-        ESP_LOGI(TAG, "Sending local ICE candidate");
-
-        cJSON *msg_json = cJSON_CreateObject();
-        cJSON *cand = cJSON_Parse((const char *)msg->data);
-        cJSON_AddItemToObject(msg_json, "candidate", cand);
-        ESP_LOGI(TAG, "local ESP ICE candidate: %s", cand);
-
-        char *msg_str = cJSON_PrintUnformatted(msg_json);
-        esp_websocket_client_send_text(ws_client, msg_str, strlen(msg_str), portMAX_DELAY);
-
-        cJSON_Delete(msg_json);
-        free(msg_str);
-    }
-
-    return 0;
-}
-
-static int on_peer_data(esp_peer_data_frame_t *frame, void *ctx)
-{
-    if (!frame || !frame->data)
-    {
-        return -1;
-    }
-
-    ESP_LOGI(TAG, "Received data: %.*s", frame->size, frame->data);
-    return 0;
 }
