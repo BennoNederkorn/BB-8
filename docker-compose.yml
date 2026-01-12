@@ -24,7 +24,7 @@ services:
     command: tail -f /dev/null
     shm_size: "512m"
     environment:
-      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      # - ROS_DISCOVERY_SERVER=127.0.0.1:11811
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=kilted
       - ROS_DOMAIN_ID=0
@@ -74,7 +74,7 @@ services:
       - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
     shm_size: "512m"
     environment:
-      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      #- ROS_DISCOVERY_SERVER=127.0.0.1:11811
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=0
