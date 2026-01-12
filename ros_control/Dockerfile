@@ -25,7 +25,7 @@ SHELL ["/bin/bash", "-c"]
 WORKDIR /root/ros_ws
 
 # Copy local workspace
-COPY ./ros_control /root/ros_ws
+COPY ./ros_ws /root/ros_ws
 
 # BUILD CRITICAL FIX:
 # Changed --symlink-install to --merge-install
