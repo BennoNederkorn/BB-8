@@ -20,14 +20,28 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     python3-colcon-common-extensions \
     git \
-    wget
+    wget \
+    libjpeg-dev \
+    libopenblas-dev \
+    liblapack-dev
 
-# 2. Clone Source Code
+# 2. Build Dlib
+WORKDIR /tmp
+RUN wget http://dlib.net/files/dlib-19.17.tar.bz2 && \
+    tar jxvf dlib-19.17.tar.bz2 && \
+    cd dlib-19.17 && \
+    # THE FIX: Use sed to comment out the buggy line automatically
+    sed -i 's/forward_algo = forward_best_algo;/\/\/forward_algo = forward_best_algo;/g' dlib/cuda/cudnn_dlibapi.cpp && \
+    # Build a Python Wheel (binary package) instead of installing directly
+    # This takes 30-60 mins. The result is stored in /tmp/dlib-19.17/dist/
+    python3 setup.py bdist_wheel
+
+# 3. Clone Source Code
 WORKDIR /ros2_cyclone_ws/src
 RUN git clone -b 0.10.2 https://github.com/eclipse-cyclonedds/cyclonedds.git && \
     git clone https://github.com/ros2/rmw_cyclonedds.git -b humble
 
-# 3. Build CycloneDDS
+# 4. Build CycloneDDS
 # We remove the conflicting libs here temporarily to ensure a clean build
 RUN rm -f /opt/ros/humble/lib/libddsc* && \
     rm -f /opt/ros/humble/bin/idlc
@@ -56,6 +70,8 @@ RUN rm -f /etc/apt/sources.list.d/ros2*.list && \
     apt-get install -y --no-install-recommends \
     openssl \
     wget \
+    libopenblas-base \
+    libgomp1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 2. Copy Build Artifacts from Builder
@@ -68,6 +84,11 @@ ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 # 4. Install Python Dependencies
 # Added --no-cache-dir to prevent saving temp files in the layer
 RUN pip3 install --no-cache-dir websockets
+
+# 5. Install dlib from wheel 
+# Copy the compiled wheel from the builder stage and install it using pip
+COPY --from=builder /tmp/dlib-19.17/dist/*.whl /tmp/
+RUN pip3 install /tmp/*.whl && rm /tmp/*.whl
 
 # 5. Install ONNX Runtime (GPU)
 # Chain commands to ensure the large .whl file is deleted in the SAME layer
