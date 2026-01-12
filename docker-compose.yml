@@ -4,10 +4,10 @@ services:
   # --- The ROS 2 Control Node ---
   ros-control:
     build: ./ros_control
-    image: bb-8_ros-control         # Names the built image for easy reference  
+    image: bb-8_ros-control # Names the built image for easy reference  
     container_name: ros_control
     restart: always
-    network_mode: "host"            # Host networking allows this node to see the AI node automatically
+    network_mode: "host" # Host networking allows this node to see the AI node automatically
     ipc: host
     # This grants the container access to your ESP32.
     # Change '/dev/ttyUSB0' to the *actual* port you found on your Jetson
@@ -31,7 +31,6 @@ services:
       # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
 
-
   # --- The AI Inference Node ---
   ai-inference:
     build:
@@ -42,10 +41,10 @@ services:
     image: ai_inference_jetson
     container_name: ai_inference
     restart: always
-    network_mode: "host"          # Host networking allows this node to see the ROS node automatically
+    network_mode: "host" # Host networking allows this node to see the ROS node automatically
     ipc: host
-    runtime: nvidia               # Enables container access to the GPU
-    privileged: true              # Match run.sh hardware access behavior
+    runtime: nvidia # Enables container access to the GPU
+    privileged: true # Match run.sh hardware access behavior
     working_dir: /jetson-inference
     tty: true
     stdin_open: true
@@ -60,7 +59,7 @@ services:
       - ./ai_inference/jetson-inference/python/training/detection/ssd/models:/jetson-inference/python/training/detection/ssd/models
       - ./ai_inference/jetson-inference/python/www/recognizer/data:/jetson-inference/python/www/recognizer/data
       - ./ai_inference/jetson-inference/python/www/dash:/jetson-inference/python/www/dash
-      
+
       # Hardware/System Passthrough
       - /tmp/argus_socket:/tmp/argus_socket
       - /etc/enctune.conf:/etc/enctune.conf

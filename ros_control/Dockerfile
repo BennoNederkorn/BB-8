@@ -1,5 +1,6 @@
 # --- Stage 1: The Base Image ---
 # (Same as before - strictly runtime dependencies)
+# FROM osrf/ros:kilted-desktop AS base
 FROM arm64v8/ros:kilted AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
