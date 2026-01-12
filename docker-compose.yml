@@ -25,10 +25,10 @@ services:
     shm_size: "512m"
     environment:
       # - ROS_DISCOVERY_SERVER=127.0.0.1:11811
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      # - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=kilted
       - ROS_DOMAIN_ID=0
-      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
 
   # --- The AI Inference Node ---
@@ -75,10 +75,10 @@ services:
     shm_size: "512m"
     environment:
       #- ROS_DISCOVERY_SERVER=127.0.0.1:11811
-      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      #- RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=humble
       - ROS_DOMAIN_ID=0
-      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
       # Required by some Jetson containers when using GPU/graphics
       - NVIDIA_VISIBLE_DEVICES=all
