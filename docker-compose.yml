@@ -24,67 +24,67 @@ services:
     command: tail -f /dev/null
     shm_size: "512m"
     environment:
-      # - ROS_DISCOVERY_SERVER=127.0.0.1:11811
-      # - ROS_DISCOVERY_SERVER=172.17.0.1:11811 # use Docker Bridge IP
+      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
       - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
       - ROS_DISTRO=kilted
       - ROS_DOMAIN_ID=0
       # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
       - ROS_LOCALHOST_ONLY=0
-  # # --- The AI Inference Node ---
-  # ai-inference:
-  #   build:
-  #     context: ./ai_inference/jetson-inference
-  #     dockerfile: Dockerfile
-  #     args:
-  #       BASE_IMAGE: dustynv/ros:humble-pytorch-l4t-r32.7.1
-  #   image: ai_inference_jetson
-  #   container_name: ai_inference
-  #   restart: always
-  #   network_mode: "host"          # Host networking allows this node to see the ROS node automatically
-  #   ipc: host
-  #   runtime: nvidia               # Enables container access to the GPU
-  #   privileged: true              # Match run.sh hardware access behavior
-  #   working_dir: /jetson-inference
-  #   tty: true
-  #   stdin_open: true
-  #   devices:
-  #     - "/dev/video0:/dev/video0"
-  #   volumes:
-  #     # Persist/download models and datasets across container rebuilds
-  #     - ./ai_inference/jetson-inference/data:/jetson-inference/data
-  #     - ./ai_inference/jetson-inference/python/training/classification/data:/jetson-inference/python/training/classification/data
-  #     - ./ai_inference/jetson-inference/python/training/classification/models:/jetson-inference/python/training/classification/models
-  #     - ./ai_inference/jetson-inference/python/training/detection/ssd/data:/jetson-inference/python/training/detection/ssd/data
-  #     - ./ai_inference/jetson-inference/python/training/detection/ssd/models:/jetson-inference/python/training/detection/ssd/models
-  #     - ./ai_inference/jetson-inference/python/www/recognizer/data:/jetson-inference/python/www/recognizer/data
-  #     - ./ai_inference/jetson-inference/python/www/dash:/jetson-inference/python/www/dash
 
-  #     # Hardware/System Passthrough
-  #     - /tmp/argus_socket:/tmp/argus_socket
-  #     - /etc/enctune.conf:/etc/enctune.conf
-  #     - /etc/nv_tegra_release:/etc/nv_tegra_release
-  #     # Mount the REAL file from host /tmp, not the virtual /proc file.
-  #     # Run 'cat /proc/device-tree/model > /tmp/nv_jetson_model' on host first.
-  #     - /tmp/nv_jetson_model:/tmp/nv_jetson_model
-  #     - /var/run/dbus:/var/run/dbus
-  #     - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
-  #     # X11 mount removed for headless operation
+  # --- The AI Inference Node ---
+  ai-inference:
+    build:
+      context: ./ai_inference/jetson-inference
+      dockerfile: Dockerfile
+      args:
+        BASE_IMAGE: dustynv/ros:humble-pytorch-l4t-r32.7.1
+    image: ai_inference_jetson
+    container_name: ai_inference
+    restart: always
+    network_mode: "host" # Host networking allows this node to see the ROS node automatically
+    ipc: host
+    runtime: nvidia # Enables container access to the GPU
+    privileged: true # Match run.sh hardware access behavior
+    working_dir: /jetson-inference
+    tty: true
+    stdin_open: true
+    devices:
+      - "/dev/video0:/dev/video0"
+    volumes:
+      # Persist/download models and datasets across container rebuilds
+      - ./ai_inference/jetson-inference/data:/jetson-inference/data
+      - ./ai_inference/jetson-inference/python/training/classification/data:/jetson-inference/python/training/classification/data
+      - ./ai_inference/jetson-inference/python/training/classification/models:/jetson-inference/python/training/classification/models
+      - ./ai_inference/jetson-inference/python/training/detection/ssd/data:/jetson-inference/python/training/detection/ssd/data
+      - ./ai_inference/jetson-inference/python/training/detection/ssd/models:/jetson-inference/python/training/detection/ssd/models
+      - ./ai_inference/jetson-inference/python/www/recognizer/data:/jetson-inference/python/www/recognizer/data
+      - ./ai_inference/jetson-inference/python/www/dash:/jetson-inference/python/www/dash
 
-  #     - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
-  #   shm_size: "512m"
-  #   environment:
-  #     - ROS_DISCOVERY_SERVER=127.0.0.1:11811 # use Docker Bridge IP (172.17.0.1)
-  #     - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
-  #     - ROS_DISTRO=humble
-  #     - ROS_DOMAIN_ID=0
-  #     # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
-  #     - ROS_LOCALHOST_ONLY=0
-  #     # Required by some Jetson containers when using GPU/graphics
-  #     - NVIDIA_VISIBLE_DEVICES=all
-  #     - NVIDIA_DRIVER_CAPABILITIES=all
-  #   # Notes:
-  #   # - This service is now built from ai_inference/jetson-inference.
-  #   # - To add more AI inference containers, create additional subdirectories
-  #   #   under ai_inference/<model-or-app>/ with their own Dockerfile and add
-  #   #   new services here with build.context pointing to them.
+      # Hardware/System Passthrough
+      - /tmp/argus_socket:/tmp/argus_socket
+      - /etc/enctune.conf:/etc/enctune.conf
+      - /etc/nv_tegra_release:/etc/nv_tegra_release
+      # Mount the REAL file from host /tmp, not the virtual /proc file.
+      # Run 'cat /proc/device-tree/model > /tmp/nv_jetson_model' on host first.
+      - /tmp/nv_jetson_model:/tmp/nv_jetson_model
+      - /var/run/dbus:/var/run/dbus
+      - /var/run/avahi-daemon/socket:/var/run/avahi-daemon/socket
+      # X11 mount removed for headless operation
+
+      - ./ai_inference/jetson-inference/ros/launch/inference_server.ros2.launch.py:/ros_deep_learning/install/ros_deep_learning/share/ros_deep_learning/launch/inference_server.ros2.launch.py:ro
+    shm_size: "512m"
+    environment:
+      - ROS_DISCOVERY_SERVER=127.0.0.1:11811
+      - RMW_IMPLEMENTATION=rmw_fastrtps_cpp
+      - ROS_DISTRO=humble
+      - ROS_DOMAIN_ID=0
+      # - RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
+      - ROS_LOCALHOST_ONLY=0
+      # Required by some Jetson containers when using GPU/graphics
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    # Notes:
+    # - This service is now built from ai_inference/jetson-inference.
+    # - To add more AI inference containers, create additional subdirectories
+    #   under ai_inference/<model-or-app>/ with their own Dockerfile and add
+    #   new services here with build.context pointing to them.
