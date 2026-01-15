@@ -1,3 +1,4 @@
+// Pin definitions for the ESP32-S3-EYE camera interface
 #define CAM_PIN_PWDN 38
 #define CAM_PIN_RESET -1 // software reset will be performed
 #define CAM_PIN_VSYNC 6

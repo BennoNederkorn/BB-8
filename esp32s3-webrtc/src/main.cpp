@@ -1,9 +1,9 @@
 // -- CONFIGURATION --
 #define BLINK_GPIO GPIO_NUM_3
 #define WIFI_SSID "not.a.virus.exe"
-#define WIFI_PASSWORD "12345678!" // Yes I know, ...
+#define WIFI_PASSWORD "password" // Yes I know, ...
 #define BOARD_ESP32S3_WROOM 1
-#define SIGNAL_SERVER_URL "wss://80.134.192.148:3000/"
+#define SIGNAL_SERVER_URL "wss://90.124.192.158:3000/" // Raspbery Pi at home
 #define STUN_SERVER_URL "stun:stun.l.google.com:19302"
 
 #include <string>
@@ -169,10 +169,10 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "start connecting to the signaling server...");
     signaling_server_connect();
 
-    // Start the video task (it will wait for is_streaming flag)
+    // Start the video task (it will wait for is_streaming flag to be true)
     xTaskCreate(video_stream_task, "video_stream", 8192, NULL, 5, NULL);
 
-    // Start the WebRTC engine task
+    // Start the WebRTC engine task which drives the esp_peer stack
     xTaskCreate(webrtc_main_task, "webrtc_main", 8192, NULL, 5, NULL);
 }
 
@@ -243,6 +243,8 @@ static void wifi_event_handler(void *arg, esp_event_base_t event_base, int32_t e
     }
 }
 
+// --- System Time Setup ---
+// Required for SSL/DTLS certificate validation during the WebRTC handshake.
 static void setup_time(void)
 {
     esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
@@ -316,7 +318,7 @@ static void print_camera_image_hex(void)
 }
 
 // --- Signaling Server ---
-// configures and initiates a secure, auto-reconnecting WebSocket connection to the signaling server.
+// Configures and initiates a secure, auto-reconnecting WebSocket connection to the signaling server.
 static void signaling_server_connect(void)
 {
     signaling_client_start(SIGNAL_SERVER_URL);
@@ -324,6 +326,7 @@ static void signaling_server_connect(void)
 
 // --- WebRTC Logic ---
 
+// Configures the WebRTC peer instance, ICE servers, and registers callbacks.
 static void setup_webrtc_peer(void)
 {
     ESP_LOGI(TAG, "LOCK");
@@ -385,7 +388,8 @@ static void setup_webrtc_peer(void)
 
 // --- Callbacks ---
 
-// 1. Outgoing Signaling: ESP32 generated SDP or Candidate -> Send to Node.js
+// 1. Outgoing Signaling: Called when the ESP32 generates an SDP Answer or ICE Candidate.
+// These messages must be sent to the remote peer via the signaling server.
 static int peer_msg_handler(esp_peer_msg_t *msg, void *ctx) // TODO gemini deep research
 {
     ESP_LOGI(TAG, "peer_msg_handler was called");
@@ -434,7 +438,7 @@ static int peer_msg_handler(esp_peer_msg_t *msg, void *ctx) // TODO gemini deep 
     return 0;
 }
 
-// 2. State Change
+// 2. State Change: Handles WebRTC connection state changes.
 static int peer_state_handler(esp_peer_state_t state, void *ctx)
 {
     switch (state)
@@ -479,7 +483,7 @@ static int peer_state_handler(esp_peer_state_t state, void *ctx)
         break;
     }
 
-    // Note: Streaming starts when Data Channel opens, not just Peer Connection
+    // Stop streaming if the connection or data channel drops
     if (state != ESP_PEER_STATE_CONNECTED && state != ESP_PEER_STATE_DATA_CHANNEL_OPENED)
     {
         is_streaming = false;
@@ -488,7 +492,8 @@ static int peer_state_handler(esp_peer_state_t state, void *ctx)
     return 0;
 }
 
-// 3. Data Channel Open
+// 3. Data Channel Open: Called when the data channel is successfully established.
+// We capture the stream_id here to know where to send video data.
 static int peer_channel_open_handler(esp_peer_data_channel_info_t *ch, void *ctx)
 {
     ESP_LOGI(TAG, "Data Channel Opened! Label: %s, ID: %d", ch->label, ch->stream_id);
@@ -498,6 +503,7 @@ static int peer_channel_open_handler(esp_peer_data_channel_info_t *ch, void *ctx
     return 0;
 }
 
+// Helper function to construct and send a JSON signaling message via WebSocket.
 static void send_signaling_json(const char *type, const char *payload_str, cJSON *payload_obj)
 {
     ESP_LOGI(TAG, "send signaling json with type: %s", type);
@@ -514,7 +520,8 @@ static void send_signaling_json(const char *type, const char *payload_str, cJSON
 }
 
 // --- Signaling Message Handler ---
-// This function is called by signaling_client.c when a full JSON message is received
+// This function is called by signaling_client.c when a full JSON message is received from the server.
+// It handles the "Offer" from the browser and incoming ICE "Candidates".
 extern "C" void handle_signaling_message(cJSON *root)
 {
     ESP_LOGI(TAG, "start handling the signaling message");
@@ -532,10 +539,10 @@ extern "C" void handle_signaling_message(cJSON *root)
     {
         ESP_LOGI(TAG, "Received Offer");
 
-        // 1. Initialize Peer (if not already)
+        // 1. Initialize Peer configuration
         setup_webrtc_peer();
 
-        // 2. Feed Offer to Peer
+        // 2. Pass the SDP Offer to the ESP Peer stack
         if (cJSON_IsString(payload_item))
         {
             ESP_LOGI(TAG, "LOCK");
@@ -556,6 +563,7 @@ extern "C" void handle_signaling_message(cJSON *root)
                 }
                 else
                 {
+                    // 3. Signal the stack to process the offer and generate an answer
                     ESP_LOGI(TAG, "Offer passed to ESP Peer stack");
                     ret = esp_peer_new_connection(peer);
 
@@ -580,6 +588,7 @@ extern "C" void handle_signaling_message(cJSON *root)
     }
     else if (strcmp(type, "candidate") == 0)
     {
+        // Handle incoming ICE candidates from the browser to help establish connectivity
         ESP_LOGI(TAG, "Received Candidate");
         xSemaphoreTake(peer_mutex, portMAX_DELAY); // Lock
         if (peer == NULL)
@@ -628,6 +637,7 @@ extern "C" void handle_signaling_message(cJSON *root)
 }
 
 // --- Video Task ---
+// Captures frames from the camera and sends them via the WebRTC Data Channel.
 static void video_stream_task(void *pvParameters)
 {
     // We use a specific label for the video data channel.
@@ -648,7 +658,7 @@ static void video_stream_task(void *pvParameters)
                 continue;
             }
 
-            // Send via Data Channel (MJPEG)
+            // Send the JPEG buffer via the Data Channel
             esp_peer_data_frame_t frame = {
                 .type = ESP_PEER_DATA_CHANNEL_DATA,
                 .stream_id = video_stream_id,
@@ -675,6 +685,7 @@ static void video_stream_task(void *pvParameters)
 }
 
 // --- WebRTC Engine Task ---
+// Periodically calls the main loop of the ESP Peer stack to process events and timers.
 static void webrtc_main_task(void *pvParameters)
 {
     ESP_LOGI(TAG, "WebRTC Engine Task Started");
