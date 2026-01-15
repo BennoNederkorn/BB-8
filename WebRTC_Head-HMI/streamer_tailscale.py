@@ -16,7 +16,12 @@ logger = logging.getLogger("pc")
 try:
     player = MediaPlayer('/dev/video0', format='v4l2', options={
         'video_size': '640x480',
-        'framerate': '30'
+        'framerate': '30',
+        # 'input_format': 'mjpeg' # MJPEG has lower encoding latency than raw on some Pis
+        'fflags': 'nobuffer',        # KEY FIX: Do not buffer data
+        'flags': 'low_delay',        # Optimize for low delay
+        # 'probesize': '32',           # Read less data before starting
+        # 'analyzeduration': '0'       # Start immediately
     })
     print("Camera initialized successfully.")
 except Exception as e:
