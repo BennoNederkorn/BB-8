@@ -11,7 +11,8 @@
     sudo systemctl enable --now ssh
     ip addr show
     ``` 
-    * ip address: try 192.168.2.149
+    * IP address: try 192.168.2.149
+    * If the host identification has changed, run ``ssh-keygen -R 192.168.1.34`` 
 * **Step 5**: In the host computer's terminal, run ``ssh breakingbytes@your_jetson_ip``
 * **Step 6**: Once connected via SSH, run ``sudo systemctl set-default multi-user.target`` to tell Jetson to not boot the GUI. To reverse this run ``sudo systemctl set-default graphical.target``. 
 * **Step 7**: Run ``sudo reboot``. This will cause the SSH connection to the Jetson to break. Reconnect after 15 seconds.
@@ -39,6 +40,8 @@
     cd /jetson-inference/tools/
     ./download-models.sh
     ```
+    If there was an error, it could be that the data/network is not a directory. For this, you have to delete that file and "remake" a new data/network directory
+
 * **Step 12**: Generate SSL certificate and private key using ``openssl``. Run the following inside the Docker container as root:
     ```bash
     openssl req -x509 -newkey rsa:4096 -keyout key.pem -out cert.pem -days 365 -nodes -subj '/CN=localhost'
@@ -60,8 +63,19 @@
 * **Step 14**: Run the detection network
     ```bash
     detectnet.py --headless webrtc://@:8554/input webrtc://@:8554/output    
-    python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 webrtc://@:8554/input webrtc://@:8554/output
+    python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 --ssl-cert=/jetson-inference/data/cert.pem --ssl-key=/jetson-inference/data/key.pem webrtc://@:8554/input webrtc://@:8554/output
+
+    python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 webrtc://@:8554/input webrtc://@:8554/output 
+
+    video-viewer csi://0 webrtc://@:8554/output --headless
     ```
+
+* **Step 15**: Run the dashboard FE and test the connection's latency
+    - Ensure that the video capture is running on https://100.93.171.127:8554/
+    - cd SentryDashboard\sentry-dashboard && ng serve
+
+ros2 launch ros_deep_learning detectnet.ros2.launch input:=webrtc://@:8554/input output:=webrtc://@:8554/output
+
 
 # Jetson Username and Password
 ```bash
@@ -82,7 +96,7 @@ ros2 launch rosbridge_server rosbridge_websocket_launch.xml delay_between_messag
 ```bash
 docker ps
 docker-compose down
-    docker stop $(docker ps -q)
+docker stop $(docker ps -q)
 ```
 
 ## Manually flush all disk caches
@@ -121,7 +135,32 @@ sudo apt update && sudo apt upgrade
 ssh-keygen -R 192.168.2.146
 ```
 
-## WIFI Connection Failing
+## Setting up the WIFI Connection 
+1. Go to this sketchy website and download the linux installer: https://cat.eduroam.org/
+2. Copy the direct link for the installer (this will install a python file)
+3. SSH into Jetson and create a new file in home (e.g., via vim/nano) and copy the contents of the python file into this file
+4. run ``sudo python FILENAME.py`` and it will prompt you to enter your username and password. This is the same for anything you do in TUM, i.e., for goXXXX id and password for it. The script authenticates you with the server and downloads the certifcate.
+5. Next, create a bash script and paste the following contents into it. Change YOUR_LRZ_ID to the correct one.
+    ```bash
+    sudo nmcli con delete eduroam 2> /dev/null; \
+    sudo nmcli con add \
+    type wifi \
+    ifname wlan0  \
+    con-name "eduroam" \
+    ssid "eduroam" \
+    wifi-sec.key-mgmt wpa-eap \
+    802-1x.eap peap \
+    802-1x.phase2-auth mschapv2 \
+    802-1x.identity "YOUR_LRZ_ID@eduroam.mwn.de" \
+    802-1x.anonymous-identity "anonymous@eduroam.mwn.de" \
+    802-1x.domain-suffix-match "radius.lrz.de" \
+    802-1x.ca-cert ~/.config/cat_installer/ca.pem \
+    802-1x.password ''
+    ```
+6. Run this bash file with sudo. If successful, you will get "Connection 'eduroam' (...) successfully added".
+7. Then finally, run this ``nmcli con up eduroam --ask``
+
+## WIFI Connection Failing  
 1. Delete the connection ``sudo nmcli connection delete "MagentaWLAN-DXPQ"``
 1. Unplug the wifi router and plug it back in
 2. Scan the network and see what it can detect: ``sudo nmcli device wifi list``
@@ -132,7 +171,7 @@ ssh-keygen -R 192.168.2.146
     ```
 5. Connect using the BSSID
     ```
-    sudo nmcli dev wifi connect "" password ''
+    sudo nmcli dev wifi connect "MagentaWLAN-DXPQ" password '86842289257325324858'
 
     08:A7:C0:DC:51:08
     ```
@@ -144,3 +183,5 @@ ssh-keygen -R 192.168.2.146
 
 
 docker-compose up -d --build
+docker-compose up -d
+docker exec -it ai_inference /bin/bash

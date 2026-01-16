@@ -85,10 +85,12 @@ ENV RMW_IMPLEMENTATION=rmw_cyclonedds_cpp
 # Added --no-cache-dir to prevent saving temp files in the layer
 RUN pip3 install --no-cache-dir websockets
 
-# 5. Install dlib from wheel 
+# 5. Install dlib from wheel, then face_recognition
 # Copy the compiled wheel from the builder stage and install it using pip
 COPY --from=builder /tmp/dlib-19.17/dist/*.whl /tmp/
-RUN pip3 install /tmp/*.whl && rm /tmp/*.whl
+RUN pip3 install /tmp/*.whl && \
+    rm /tmp/*.whl && \
+    pip3 install --no-cache-dir face_recognition
 
 # 5. Install ONNX Runtime (GPU)
 # Chain commands to ensure the large .whl file is deleted in the SAME layer
