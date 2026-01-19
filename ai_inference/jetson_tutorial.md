@@ -65,9 +65,15 @@
     detectnet.py --headless webrtc://@:8554/input webrtc://@:8554/output    
     python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 --ssl-cert=/jetson-inference/data/cert.pem --ssl-key=/jetson-inference/data/key.pem webrtc://@:8554/input webrtc://@:8554/output
 
-    python3 inference_server.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 webrtc://@:8554/input webrtc://@:8554/output 
+    python3 inference_server_OLD.py --network=facenet --headless --overlay=none --input-width=360 --input-height=240 --threshold=0.8 webrtc://@:8554/input webrtc://@:8554/output 
 
     video-viewer csi://0 webrtc://@:8554/output --headless
+
+    python3 -m face_service --network=facenet --headless --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://raspberrypi.tail88b734.ts.net:8554/cam --output=webrtc://@:8554/output 
+    
+    python3 -m face_service --network=facenet --headless --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --output=webrtc://@:8554/output
+    
+    python3 -m face_service --network=facenet --headless --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
     ```
 
 * **Step 15**: Run the dashboard FE and test the connection's latency
