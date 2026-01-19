@@ -59,6 +59,7 @@ services:
       - ./ai_inference/jetson-inference/python/training/detection/ssd/models:/jetson-inference/python/training/detection/ssd/models
       - ./ai_inference/jetson-inference/python/www/recognizer/data:/jetson-inference/python/www/recognizer/data
       - ./ai_inference/jetson-inference/python/www/dash:/jetson-inference/python/www/dash
+      - ./ai_inference/jetson-inference/python/face_service:/jetson-inference/python/face_service
 
       # Hardware/System Passthrough
       - /tmp/argus_socket:/tmp/argus_socket
