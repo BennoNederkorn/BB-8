@@ -3,8 +3,11 @@
 
 CommandReceiver::CommandReceiver() : Node("command_receiver")
 {
-    serial_port_ = open("/dev/ttyUSB0", O_RDWR); // # TODO change if needed
-
+    serial_port_ = open("/dev/ttyUSB0", O_RDWR); // # TODO change if needed, eg to /dev/ttyACM0
+    if (serial_port_ < 0)
+    {
+        serial_port_ = open("/dev/ttyUSB1", O_RDWR);
+    }
     if (serial_port_ < 0)
     {
         RCLCPP_ERROR(this->get_logger(), "Error %i from open: %s", errno, strerror(errno));
