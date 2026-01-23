@@ -73,8 +73,20 @@
     
     python3 -m face_service --network=facenet --headless --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --output=webrtc://@:8554/output
     
-    python3 -m face_service --network=facenet --headless --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
+    python3 -m face_service --network=facenet --headless --ws-port=9091 --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
     ```
+
+    Raspberry Terminal 1
+    ```bash
+    ffmpeg -f v4l2 -framerate 15 -video_size 320x240 -i /dev/video0   -vf format=yuv420p   -vcodec libx264 -profile:v baseline -preset ultrafast -tune zerolatency -b:v 400k   -x264-params "repeat-headers=1:scenecut=0:keyint=30"   -f rtsp rtsp://127.0.0.1:8554/cam
+    ```
+    
+    Raspberry Terminal 2
+    ```bash
+    ./mediamtc
+    ```
+
+
 
 * **Step 15**: Run the dashboard FE and test the connection's latency
     - Ensure that the video capture is running on https://100.93.171.127:8554/
