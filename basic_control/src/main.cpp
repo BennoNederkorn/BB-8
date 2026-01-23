@@ -1,177 +1,293 @@
 #include <Arduino.h>
-#include <Stepper.h>
+// #include <Stepper.h>
+#include <AccelStepper.h> // non-stopping Stepper Library
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+
+#include <driver/mcpwm.h>
+#include <driver/pcnt.h>
 
 // ==========================================
 // 1. PIN DEFINITIONS
 // ==========================================
 
-// --- Stepper (Head) ---
-const int stepsPerRevolution = 2048; 
-Stepper myStepper(stepsPerRevolution, 19, 5, 18, 17); // IN1, IN3, IN2, IN4
+// Stepper (Head)
+#define STEPPER_PIN1 19
+#define STEPPER_PIN3 5
+#define STEPPER_PIN2 18
+#define STEPPER_PIN4 17
 
-// --- DC Motors ---
-#define MOT_A_RPWM 14
-#define MOT_A_LPWM 27
-#define MOT_A_R_EN 12
+// I2C IMU
+#define SDA_PIN 21
+#define SCL_PIN 22
+#define MPU_ADDR 0x68
+
+// Motor A (Left) - Connected to H-Bridge L
 #define MOT_A_L_EN 13
+#define MOT_A_R_EN 12
+#define MOT_A_L_PWM 27 // Diagram "PWM1"
+#define MOT_A_R_PWM 14 // Diagram "PWM2"
 
-#define MOT_B_RPWM 32
-#define MOT_B_LPWM 33
-#define MOT_B_R_EN 25
+// Motor B (Right) - Connected to H-Bridge L
+#define MOT_B_L_PWM 33 // Diagram "PWM3"
+#define MOT_B_R_PWM 32 // Diagram "PWM4"
 #define MOT_B_L_EN 26
+#define MOT_B_R_EN 25
 
-// PWM Channels
-const int freq = 5000;
-const int resolution = 8;
-#define CH_A_RPWM 0
-#define CH_A_LPWM 1
-#define CH_B_RPWM 2
-#define CH_B_LPWM 3
+// Encoders (Assigned to Input-Only Pins for safety)
+#define MOT_A_VOUTA 34
+#define MOT_A_VOUTB 35
+#define MOT_B_VOUTA 36
+#define MOT_B_VOUTB 39
+
+// PCNT Units for Encoders
+#define PCNT_UNIT_A PCNT_UNIT_0
+#define PCNT_UNIT_B PCNT_UNIT_1
+
+// onboard Led
+#define ONBOARD_LED 1
 
 // ==========================================
 // 2. GLOBAL VARIABLES (Shared between cores)
 // ==========================================
+
+// 'volatile' is used for variables shared between ISR/Tasks
 Adafruit_MPU6050 mpu;
+volatile float currentPitch = 0.0;
+volatile float currentRoll = 0.0;
+volatile float currentYaw = 0.0;
 
-// Volatile means: "This variable changes unexpectedly, don't cache it."
-volatile float currentTilt = 0.0;
-volatile float motorPower = 0.0; 
+volatile int16_t encCountA = 0;
+volatile int16_t encCountB = 0;
 
-// Task Handle
-TaskHandle_t TaskBalance; 
+AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
+
+// Shared data struct to hold received serial data
+struct CommandData
+{
+    bool ai_mode = false;
+    double head_direction = 0.0;
+    double head_force = 0.0;
+    double body_direction = 0.0;
+    double body_force = 0.0;
+};
+CommandData sharedCmd;
+SemaphoreHandle_t dataMutex;
+
+// local data to hold the snapshot, only used in control loop
+bool ai_mode = false;
+double head_direction = 0.0;
+double head_force = 0.0;
+double body_direction = 0.0;
+double body_force = 0.0;
 
 // ==========================================
 // 3. HELPER FUNCTIONS
 // ==========================================
-void setMotorSpeed(int speed) {
-  // speed: -255 to 255 (Applies to BOTH motors for balancing)
-  // Clamp values to prevent errors
-  if(speed > 255) speed = 255;
-  if(speed < -255) speed = -255;
 
-  if (speed > 0) {
-    // Forward
-    ledcWrite(CH_A_RPWM, speed); ledcWrite(CH_A_LPWM, 0);
-    ledcWrite(CH_B_RPWM, speed); ledcWrite(CH_B_LPWM, 0);
-  } else if (speed < 0) {
-    // Backward
-    ledcWrite(CH_A_RPWM, 0); ledcWrite(CH_A_LPWM, abs(speed));
-    ledcWrite(CH_B_RPWM, 0); ledcWrite(CH_B_LPWM, abs(speed));
-  } else {
-    // Stop
-    ledcWrite(CH_A_RPWM, 0); ledcWrite(CH_A_LPWM, 0);
-    ledcWrite(CH_B_RPWM, 0); ledcWrite(CH_B_LPWM, 0);
-  }
+void setupMotors()
+{
+    // Initialize Enable Pins
+    pinMode(MOT_A_L_EN, OUTPUT);
+    pinMode(MOT_A_R_EN, OUTPUT);
+    pinMode(MOT_B_L_EN, OUTPUT);
+    pinMode(MOT_B_R_EN, OUTPUT);
+
+    // Enable drivers (Set High to enable H-Bridge)
+    digitalWrite(MOT_A_L_EN, HIGH);
+    digitalWrite(MOT_A_R_EN, HIGH);
+    digitalWrite(MOT_B_L_EN, HIGH);
+    digitalWrite(MOT_B_R_EN, HIGH);
+
+    // Initialize MCPWM for Motor A
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0A, MOT_A_L_PWM);
+    mcpwm_gpio_init(MCPWM_UNIT_0, MCPWM0B, MOT_A_R_PWM);
+
+    // Initialize MCPWM for Motor B
+    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0A, MOT_B_L_PWM);
+    mcpwm_gpio_init(MCPWM_UNIT_1, MCPWM0B, MOT_B_R_PWM);
+
+    mcpwm_config_t pwm_config;
+    pwm_config.frequency = 20000; // 20kHz frequency (inaudible)
+    pwm_config.cmpr_a = 0;
+    pwm_config.cmpr_b = 0;
+    pwm_config.counter_mode = MCPWM_UP_COUNTER;
+    pwm_config.duty_mode = MCPWM_DUTY_MODE_0;
+
+    mcpwm_init(MCPWM_UNIT_0, MCPWM_TIMER_0, &pwm_config);
+    mcpwm_init(MCPWM_UNIT_1, MCPWM_TIMER_0, &pwm_config);
 }
 
-// ==========================================
-// 4. THE CRITICAL TASK (Core 0)
-// This runs independent of the main loop!
-// ==========================================
-void BalanceCode( void * pvParameters ){
-  Serial.print("Balance Task running on Core: ");
-  Serial.println(xPortGetCoreID());
+void setupHeadStepper()
+{
+    headStepper.setSpeed(10);      // Slow speed
+    headStepper.setMaxSpeed(1000); // Steps per second
+    headStepper.setAcceleration(500);
+}
 
-  // Define loop timing (e.g., 100Hz = every 10ms)
-  TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms delay
-  xLastWakeTime = xTaskGetTickCount();
+void setMotorSpeed(mcpwm_unit_t unit, float speed)
+{
+    // speed is -100.0 to 100.0
+    if (speed > 0)
+    {
+        mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, speed);
+        mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, 0); // Low
+        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+    }
+    else
+    {
+        mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, 0); // Low
+        mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, -speed);
+        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+    }
+}
 
-  for(;;){ // Infinite Loop
-    
-    // --- A. READ IMU ---
+// --- ENCODER SETUP (PCNT Hardware) ---
+void setupEncoder(int unit, int pinA, int pinB)
+{
+    // TODO
+}
+
+// --- IMU HELPER (Basic Reading) ---
+void readIMU()
+{
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
+    currentYaw = a.acceleration.x;
+    currentPitch = a.acceleration.y;
+    currentRoll = a.acceleration.z;
+    Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
 
-    // Simplified Tilt Calculation (Ideally use a Complementary Filter later)
-    // For BB-8 "Hamster" drive, we usually care about Pitch or Roll.
-    // Let's assume 'Y' axis is our tilt axis for now.
-    currentTilt = a.acceleration.y; 
+    // TODO handle I2C errors here to prevent locking up
+}
 
-    // --- B. CALCULATE PID (Placeholder) ---
-    // Here is where the math happens later.
-    // For now, let's just do a "Dummy Test": 
-    // If we tilt > 2m/s^2, turn motors on slowly.
-    
-    if (currentTilt > 2.0) {
-      motorPower = 60;  // Lean Forward -> Drive Forward
-    } else if (currentTilt < -2.0) {
-      motorPower = -60; // Lean Back -> Drive Back
-    } else {
-      motorPower = 0;   // Safe Zone
+// --- CORE 1: REAL-TIME CONTROL TASK ---
+void controlTask(void *pvParameters)
+{
+    TickType_t xLastWakeTime = xTaskGetTickCount();
+    const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
+
+    for (;;)
+    {
+        // Serial.println("CORE 1 Loop: realtime");
+
+        // Take the mutex and copy the data to local vars to give it back quickly.
+        if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
+        {
+            ai_mode = sharedCmd.ai_mode;
+            head_direction = sharedCmd.head_direction;
+            head_force = sharedCmd.head_force;
+            body_direction = sharedCmd.body_direction;
+            body_force = sharedCmd.body_force;
+            xSemaphoreGive(dataMutex);
+        }
+
+        readIMU();
+
+        // TODO Encoders:
+        // pcnt_get_counter_value(PCNT_UNIT_A, (int16_t *)&encCountA);
+        // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
+
+        // TODO: more advanced logic
+        float output_A = body_force * 100;
+        float output_B = body_force * 100;
+
+        // 3. WRITE MOTORS
+        setMotorSpeed(MCPWM_UNIT_0, output_A);
+        setMotorSpeed(MCPWM_UNIT_1, output_B);
+
+        // Wait specifically until 10ms have passed since last run
+        vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+// --- CORE 0/1: SETUP & SERIAL ---
+void setup()
+{
+    Serial.begin(115200);
+    Serial.println("BB-8 Controller Starting...");
+    dataMutex = xSemaphoreCreateMutex();
+
+    // pinMode(ONBOARD_LED, OUTPUT);
+    Wire.begin(SDA_PIN, SCL_PIN, 400000); // Fast I2C
+
+    if (!mpu.begin(MPU_ADDR, &Wire))
+    {
+        Serial.println("Failed to find MPU6050 chip!");
+        // Failed to find MPU6050 chip
+        while (1)
+        {
+            delay(10); // Halt here if sensor fails
+        }
     }
 
-    // --- C. WRITE TO MOTORS ---
-    setMotorSpeed((int)motorPower);
+    // Setup MPU ranges if necessary
+    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
+    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
-    // --- D. WAIT ---
-    // This command ensures the loop runs exactly every 10ms,
-    // regardless of how long the math took.
-    vTaskDelayUntil( &xLastWakeTime, xFrequency );
-  } 
+    setupMotors();
+    setupHeadStepper();
+    // TODO Encoders:
+    // setupEncoder(PCNT_UNIT_A, MOT_A_VOUTA, MOT_A_VOUTB);
+    // setupEncoder(PCNT_UNIT_B, MOT_B_VOUTA, MOT_B_VOUTB);
+
+    // Launch Control Task pinned to Core 1
+    xTaskCreatePinnedToCore(
+        controlTask,   // Function
+        "ControlLoop", // Name
+        4096,          // Stack size
+        NULL,          // Parameters
+        1,             // Priority (1 = High)
+        NULL,          // Task Handle
+        1              // Core ID (1 = App Core)
+    );
 }
 
-// ==========================================
-// 5. SETUP
-// ==========================================
-void setup() {
-  Serial.begin(115200);
-  
-  // --- Init IMU ---
-  if (!mpu.begin()) {
-    Serial.println("IMU Failed!");
-    while (1);
-  }
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
+// --- CORE 0: Serial and non-realtime tasks ---
+void loop()
+{
+    // Serial.println("CORE 0 Loop: serial, stepper");
 
-  // --- Init DC Motors ---
-  pinMode(MOT_A_R_EN, OUTPUT); pinMode(MOT_A_L_EN, OUTPUT);
-  pinMode(MOT_B_R_EN, OUTPUT); pinMode(MOT_B_L_EN, OUTPUT);
-  digitalWrite(MOT_A_R_EN, HIGH); digitalWrite(MOT_A_L_EN, HIGH);
-  digitalWrite(MOT_B_R_EN, HIGH); digitalWrite(MOT_B_L_EN, HIGH);
+    // This loop handles Serial communication and the stepper motor "in the background"
+    // It will not slow down the motors because they are in the 'controlTask'
 
-  ledcSetup(CH_A_RPWM, freq, resolution);
-  ledcSetup(CH_A_LPWM, freq, resolution);
-  ledcSetup(CH_B_RPWM, freq, resolution);
-  ledcSetup(CH_B_LPWM, freq, resolution);
-  ledcAttachPin(MOT_A_RPWM, CH_A_RPWM); ledcAttachPin(MOT_A_LPWM, CH_A_LPWM);
-  ledcAttachPin(MOT_B_RPWM, CH_B_RPWM); ledcAttachPin(MOT_B_LPWM, CH_B_LPWM);
+    // Check for incoming serial commands here
+    if (Serial.available() > 0)
+    {
+        // Read the line until a newline character
+        String line = Serial.readStringUntil('\n');
 
-  // --- Init Stepper ---
-  myStepper.setSpeed(10); // Slow speed
+        // Simple Parsing using sscanf
+        // We use temporary variables to ensure data integrity during parsing
+        int temp_ai;
+        float temp_hd, temp_hf, temp_bd, temp_bf;
 
-  // --- LAUNCH PARALLEL TASK ---
-  // xTaskCreatePinnedToCore( Function, Name, StackSize, Params, Priority, Handle, CoreID )
-  xTaskCreatePinnedToCore(
-    BalanceCode,   // Function to call
-    "BalanceTask", // Name for debugging
-    10000,         // Stack size (bytes)
-    NULL,          // Parameters
-    1,             // Priority (1 = High)
-    &TaskBalance,  // Task Handle
-    0              // Run on Core 0 (Main loop runs on Core 1)
-  );
-}
+        // sscanf parses the CSV string. Returns number of items successfully matched.
+        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f",
+                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf);
 
-// ==========================================
-// 6. MAIN LOOP (Core 1)
-// Handles "Slow" stuff like Head Movement
-// ==========================================
-void loop() {
-  
-  // Example: Move head slowly back and forth
-  // Even though 'myStepper.step' BLOCKS execution for a split second,
-  // Core 0 (BalanceCode) will keep running perfectly!
-  
-  Serial.print("Main Loop (Core 1) - Tilt: ");
-  Serial.println(currentTilt); // Read the value updated by Core 0
+        // If we found all 5 items, update our global variables
+        if (items == 5)
+        {
+            if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
+            {
+                sharedCmd.ai_mode = (temp_ai == 1);
+                sharedCmd.head_direction = temp_hd;
+                sharedCmd.head_force = temp_hf;
+                sharedCmd.body_direction = temp_bd;
+                sharedCmd.body_force = temp_bf;
+                xSemaphoreGive(dataMutex);
+            }
+        }
+    }
 
-  myStepper.step(100); // Move head
-  delay(500);
-  myStepper.step(-100); // Move head back
-  delay(500);
+    // Stepper
+    if (xSemaphoreTake(dataMutex, (TickType_t)0) == pdTRUE)
+    {
+        headStepper.moveTo((long)sharedCmd.head_direction);
+        xSemaphoreGive(dataMutex);
+    }
+    headStepper.run();
 }
