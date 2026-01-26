@@ -135,16 +135,18 @@ static const float sinTable[360] = {
     -0.529919, -0.515038, -0.500000, -0.484810, -0.469472, -0.453990, -0.438371, -0.422618,
     -0.406737, -0.390731, -0.374607, -0.358368, -0.342020, -0.325568, -0.309017, -0.292372,
     -0.275637, -0.258819, -0.241922, -0.224951, -0.207912, -0.190809, -0.173648, -0.156434,
-    -0.139173, -0.121869, -0.104528, -0.087156, -0.069756, -0.052336, -0.034899, -0.017452
-};
+    -0.139173, -0.121869, -0.104528, -0.087156, -0.069756, -0.052336, -0.034899, -0.017452};
 
-inline float fastSin(float degrees) {
+inline float fastSin(float degrees)
+{
     int idx = ((int)degrees) % 360;
-    if (idx < 0) idx += 360;
+    if (idx < 0)
+        idx += 360;
     return sinTable[idx];
 }
 
-inline float fastCos(float degrees) {
+inline float fastCos(float degrees)
+{
     return fastSin(degrees + 90.0);
 }
 
@@ -195,13 +197,13 @@ void setMotorSpeed(mcpwm_unit_t unit, float speed)
     {
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, speed);
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, 0); // Low
-        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+        // mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
     }
     else
     {
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, 0); // Low
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, -speed);
-        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+        // mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
     }
 }
 
@@ -261,26 +263,39 @@ void controlTask(void *pvParameters)
         // TODO: more advanced logic
 
         float speed = body_force * 100.0;
-        if (body_direction <= 0.0 && body_direction < 90.0)
+        if (0.0 <= body_direction && body_direction < 90.0) // turn right (0) --> forward (90)
         {
-            output_A = -speed;
-            output_B = speed * fastCos(2*body_direction);
+            output_A = -speed;                                      // left fullspeed
+            output_B = speed * fastCos(2 * body_direction + 180.0); // right becomes faster
         }
-        else if (body_direction <= 90.0 && body_direction < 180.0)
+        else if (90.0 <= body_direction && body_direction < 180.0) // forward (90) --> turn left (180)
         {
-            output_A = speed * fastCos(2*body_direction);
-            output_B = -speed;
+            output_A = speed * fastCos(2 * body_direction + 180.0); // left becomes slower
+            output_B = speed;                                       // right fullspeed
         }
-        else if (body_direction <= 180.0 && body_direction < 270.0)
+        else if (180.0 <= body_direction && body_direction < 270.0) // turn left (180) --> backwards (270)
         {
-            output_A = speed;
-            output_B = -speed * fastCos(2*body_direction);
+            output_A = speed;                               // left fullspeed backwards
+            output_B = speed * fastCos(2 * body_direction); // right becomes slower
         }
-        else
+        else // (270.0 <= body_direction && body_direction < 360.0) // backwards (270) --> turn right (0)
         {
-            output_A = -speed * fastCos(2*body_direction);
-            output_B = speed;
+            output_A = speed * fastCos(2 * body_direction); // left becomes faster
+            output_B = -speed;                              // right fullspeed backwards
         }
+
+        // `// FORWARDS`
+        // `output_A = -speed; // left`
+        // `output_B = speed;  // right`
+        // `// TURN LEFT`
+        // `output_A = speed; // left`
+        // `output_B = speed; // right`
+        // `// BACKWARDS`
+        // `output_A = speed;  // left`
+        // `output_B = -speed; // right`
+        // `// TURN RIGHT`
+        // `output_A = -speed; // left`
+        // `output_B = -speed; // right`
 
         // 3. WRITE MOTORS
         setMotorSpeed(MCPWM_UNIT_0, output_A);
