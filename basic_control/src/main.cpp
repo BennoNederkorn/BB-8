@@ -261,24 +261,24 @@ void controlTask(void *pvParameters)
         // TODO: more advanced logic
 
         float speed = body_force * 100.0;
-        if (body_direction < 90.0)
-        {
-            output_A = speed;
-            output_B = speed * (1.0 - 2.0 * (body_direction / 90.0));
-        }
-        else if (body_direction < 180.0)
-        {
-            output_A = speed * (1.0 - 2.0 * ((body_direction - 90.0) / 90.0));
-            output_B = -speed;
-        }
-        else if (body_direction < 270.0)
+        if (body_direction <= 0.0 && body_direction < 90.0)
         {
             output_A = -speed;
-            output_B = speed * (-1.0 + 2.0 * ((body_direction - 180.0) / 90.0));
+            output_B = speed * fastCos(2*body_direction);
+        }
+        else if (body_direction <= 90.0 && body_direction < 180.0)
+        {
+            output_A = speed * fastCos(2*body_direction);
+            output_B = -speed;
+        }
+        else if (body_direction <= 180.0 && body_direction < 270.0)
+        {
+            output_A = speed;
+            output_B = -speed * fastCos(2*body_direction);
         }
         else
         {
-            output_A = speed * (-1.0 + 2.0 * ((body_direction - 270.0) / 90.0));
+            output_A = -speed * fastCos(2*body_direction);
             output_B = speed;
         }
 
