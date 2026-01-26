@@ -21,6 +21,7 @@ private:
     rclcpp::Subscription<bb8_cmd_receiver::msg::HMICmds>::SharedPtr command_subscription_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr image_subscription_;
     int serial_port_;
+    double kp, ki, kd;
     // rclcpp::TimerBase::SharedPtr timer_;
 };
 
