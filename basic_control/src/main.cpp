@@ -25,7 +25,8 @@
 
 // Motor A (Left) - Connected to H-Bridge L
 #define MOT_A_L_EN 13
-#define MOT_A_R_EN 12
+// #define MOT_A_R_EN 12 // Failed to communicate with the flash chip is GPIO 12 is used
+#define MOT_A_R_EN 4   //
 #define MOT_A_L_PWM 27 // Diagram "PWM1"
 #define MOT_A_R_PWM 14 // Diagram "PWM2"
 
@@ -62,25 +63,26 @@ volatile int16_t encCountA = 0;
 volatile int16_t encCountB = 0;
 
 AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
+const int MAX_STEPPER_SPPED = 600; // Steps per second
 
 // Shared data struct to hold received serial data
 struct CommandData
 {
     bool ai_mode = false;
-    double head_direction = 0.0;
-    double head_force = 0.0;
-    double body_direction = 0.0;
-    double body_force = 0.0;
+    float head_direction = 0.0;
+    float head_force = 0.0;
+    float body_direction = 0.0;
+    float body_force = 0.0;
 };
 CommandData sharedCmd;
 SemaphoreHandle_t dataMutex;
 
-// local data to hold the snapshot, only used in control loop
+// local data to hold the snapshot
 bool ai_mode = false;
-double head_direction = 0.0;
-double head_force = 0.0;
-double body_direction = 0.0;
-double body_force = 0.0;
+float head_direction = 0.0;
+float head_force = 0.0;
+float body_direction = 0.0;
+float body_force = 0.0;
 
 // ==========================================
 // 3. HELPER FUNCTIONS
@@ -121,8 +123,8 @@ void setupMotors()
 
 void setupHeadStepper()
 {
-    headStepper.setSpeed(10);      // Slow speed
-    headStepper.setMaxSpeed(1000); // Steps per second
+    // headStepper.setSpeed(10);      // We will set speed in the loop
+    headStepper.setMaxSpeed(MAX_STEPPER_SPPED); // Steps per second
     headStepper.setAcceleration(500);
 }
 
@@ -157,7 +159,7 @@ void readIMU()
     currentYaw = a.acceleration.x;
     currentPitch = a.acceleration.y;
     currentRoll = a.acceleration.z;
-    Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
+    // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
 
     // TODO handle I2C errors here to prevent locking up
 }
@@ -176,8 +178,6 @@ void controlTask(void *pvParameters)
         if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
         {
             ai_mode = sharedCmd.ai_mode;
-            head_direction = sharedCmd.head_direction;
-            head_force = sharedCmd.head_force;
             body_direction = sharedCmd.body_direction;
             body_force = sharedCmd.body_force;
             xSemaphoreGive(dataMutex);
@@ -206,7 +206,7 @@ void controlTask(void *pvParameters)
 void setup()
 {
     Serial.begin(115200);
-    Serial.println("BB-8 Controller Starting...");
+    // Serial.println("BB-8 Controller Starting...");
     dataMutex = xSemaphoreCreateMutex();
 
     // pinMode(ONBOARD_LED, OUTPUT);
@@ -214,7 +214,7 @@ void setup()
 
     if (!mpu.begin(MPU_ADDR, &Wire))
     {
-        Serial.println("Failed to find MPU6050 chip!");
+        // Serial.println("Failed to find MPU6050 chip!");
         // Failed to find MPU6050 chip
         while (1)
         {
@@ -260,7 +260,7 @@ void loop()
         String line = Serial.readStringUntil('\n');
 
         // Simple Parsing using sscanf
-        // We use temporary variables to ensure data integrity during parsing
+        // temporary variables to ensure data integrity during parsing
         int temp_ai;
         float temp_hd, temp_hf, temp_bd, temp_bf;
 
@@ -278,16 +278,30 @@ void loop()
                 sharedCmd.head_force = temp_hf;
                 sharedCmd.body_direction = temp_bd;
                 sharedCmd.body_force = temp_bf;
+                head_direction = temp_hd;
+                head_force = temp_hf;
                 xSemaphoreGive(dataMutex);
+                // new_command_received = true;
             }
         }
     }
 
-    // Stepper
-    if (xSemaphoreTake(dataMutex, (TickType_t)0) == pdTRUE)
+    // headStepper.setSpeed(700); // Set a constant sweep speed (steps/sec)
+    // headStepper.runSpeed();
+
+    if (head_force != 0.0)
     {
-        headStepper.moveTo((long)sharedCmd.head_direction);
-        xSemaphoreGive(dataMutex);
+        if (head_direction == 0.0)
+        {
+            headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+            headStepper.runSpeed();
+            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+        }
+        if (head_direction == 180.0)
+        {
+            headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+            headStepper.runSpeed();
+            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+        }
     }
-    headStepper.run();
 }
