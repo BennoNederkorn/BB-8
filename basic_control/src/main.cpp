@@ -84,6 +84,11 @@ float head_force = 0.0;
 float body_direction = 0.0;
 float body_force = 0.0;
 
+// PID tuning parameters
+float Kd = 0.0;
+float Ki = 0.0;
+float Kp = 0.0;
+
 // ==========================================
 // 3. HELPER FUNCTIONS
 // ==========================================
@@ -292,13 +297,14 @@ void loop()
         // temporary variables to ensure data integrity during parsing
         int temp_ai;
         float temp_hd, temp_hf, temp_bd, temp_bf;
+        float temp_kp, temp_ki, temp_kd;
 
         // sscanf parses the CSV string. Returns number of items successfully matched.
-        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f",
-                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf);
+        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
+                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
 
         // If we found all 5 items, update our global variables
-        if (items == 5)
+        if (items == 8)
         {
             if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
             {
@@ -309,6 +315,9 @@ void loop()
                 sharedCmd.body_force = temp_bf;
                 head_direction = temp_hd;
                 head_force = temp_hf;
+                Kp = temp_kp;
+                Ki = temp_ki;
+                Kd = temp_kd;
                 xSemaphoreGive(dataMutex);
                 // new_command_received = true;
             }

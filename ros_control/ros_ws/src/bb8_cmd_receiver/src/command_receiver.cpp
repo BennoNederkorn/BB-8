@@ -3,6 +3,12 @@
 
 CommandReceiver::CommandReceiver() : Node("command_receiver")
 {
+    this->kp = this->declare_parameter<double>("kp", 0.0);
+    this->ki = this->declare_parameter<double>("ki", 0.0);
+    this->kd = this->declare_parameter<double>("kd", 0.0);
+
+    RCLCPP_INFO(this->get_logger(), "Parameters declared: kp=%.2f, ki=%.2f, kd=%.2f", kp, ki, kd);
+
     serial_port_ = open("/dev/ttyUSB0", O_RDWR);
     if (serial_port_ < 0)
     {
@@ -50,6 +56,10 @@ CommandReceiver::CommandReceiver() : Node("command_receiver")
     auto command_callback =
         [this](bb8_cmd_receiver::msg::HMICmds::UniquePtr msg) -> void
     {
+        this->get_parameter("kp", this->kp);
+        this->get_parameter("ki", this->ki);
+        this->get_parameter("kd", this->kd);
+
         bool ai_mode = msg->ai_mode;
         double head_dir = msg->head_direction;
         double head_force = msg->head_force > 1.0 ? 1.0 : msg->head_force;
@@ -62,8 +72,8 @@ CommandReceiver::CommandReceiver() : Node("command_receiver")
 
         // Format: "1,000.0,0.000,360.0,1.000\n"
         char buffer[128];
-        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f\n",
-                               ai_mode, head_dir, head_force, body_dir, body_force);
+        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f\n",
+                               ai_mode, head_dir, head_force, body_dir, body_force, this->kp, this->ki, this->kd);
 
         // Write to serial
         int written = write(serial_port_, buffer, len);
