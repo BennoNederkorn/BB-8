@@ -270,18 +270,18 @@ void controlTask(void *pvParameters)
         }
         else if (90.0 <= body_direction && body_direction < 180.0) // forward (90) --> turn left (180)
         {
-            output_A = speed * fastCos(2 * body_direction + 180.0); // left becomes slower
-            output_B = speed;                                       // right fullspeed
+            output_A = speed * fastCos(2 * (body_direction - 90.0) + 180.0); // left becomes slower
+            output_B = speed;                                                // right fullspeed
         }
         else if (180.0 <= body_direction && body_direction < 270.0) // turn left (180) --> backwards (270)
         {
-            output_A = speed;                               // left fullspeed backwards
-            output_B = speed * fastCos(2 * body_direction); // right becomes slower
+            output_A = speed;                                         // left fullspeed backwards
+            output_B = speed * fastCos(2 * (body_direction - 180.0)); // right becomes slower
         }
         else // (270.0 <= body_direction && body_direction < 360.0) // backwards (270) --> turn right (0)
         {
-            output_A = speed * fastCos(2 * body_direction); // left becomes faster
-            output_B = -speed;                              // right fullspeed backwards
+            output_A = speed * fastCos(2 * (body_direction - 270.0)); // left becomes faster
+            output_B = -speed;                                        // right fullspeed backwards
         }
 
         // `// FORWARDS`
