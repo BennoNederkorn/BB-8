@@ -164,11 +164,20 @@ void readIMU()
     // TODO handle I2C errors here to prevent locking up
 }
 
+// // returns a value between 1 and -1 for values between 0 and 90
+// float smooth(float angle)
+// {
+//   return math.cos((1 / 90) * angle / (2 * math.pi));
+// }
+
 // --- CORE 1: REAL-TIME CONTROL TASK ---
 void controlTask(void *pvParameters)
 {
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
+
+    float output_A = 0.0;
+    float output_B = 0.0;
 
     for (;;)
     {
@@ -190,12 +199,27 @@ void controlTask(void *pvParameters)
         // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
 
         // TODO: more advanced logic
-        float output_A = 0.0;
-        float output_B = 0.0;
-        if (0.0 <= body_direction < 90.0)
+
+        float speed = body_force * 100.0;
+        if (body_direction < 90.0)
         {
-            output_A = (1 / 45 * body_direction + 1) * body_force * 100;
-            output_B = -body_force * 100;
+            output_A = speed;
+            output_B = speed * (1.0 - 2.0 * (body_direction / 90.0));
+        }
+        else if (body_direction < 180.0)
+        {
+            output_A = speed * (1.0 - 2.0 * ((body_direction - 90.0) / 90.0));
+            output_B = -speed;
+        }
+        else if (body_direction < 270.0)
+        {
+            output_A = -speed;
+            output_B = speed * (-1.0 + 2.0 * ((body_direction - 180.0) / 90.0));
+        }
+        else
+        {
+            output_A = speed * (-1.0 + 2.0 * ((body_direction - 270.0) / 90.0));
+            output_B = speed;
         }
 
         // 3. WRITE MOTORS
