@@ -190,8 +190,13 @@ void controlTask(void *pvParameters)
         // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
 
         // TODO: more advanced logic
-        float output_A = body_force * 100;
-        float output_B = body_force * 100;
+        float output_A = 0.0;
+        float output_B = 0.0;
+        if (0.0 <= body_direction < 90.0)
+        {
+            output_A = (1 / 45 * body_direction + 1) * body_force * 100;
+            output_B = -body_force * 100;
+        }
 
         // 3. WRITE MOTORS
         setMotorSpeed(MCPWM_UNIT_0, output_A);
@@ -285,9 +290,6 @@ void loop()
             }
         }
     }
-
-    // headStepper.setSpeed(700); // Set a constant sweep speed (steps/sec)
-    // headStepper.runSpeed();
 
     if (head_force != 0.0)
     {
