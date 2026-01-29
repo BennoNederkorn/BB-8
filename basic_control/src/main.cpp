@@ -4,6 +4,7 @@
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <math.h>
 
 #include <driver/mcpwm.h>
 #include <driver/pcnt.h>
@@ -58,12 +59,22 @@ Adafruit_MPU6050 mpu;
 volatile float currentPitch = 0.0;
 volatile float currentRoll = 0.0;
 volatile float currentYaw = 0.0;
+volatile float currentGyroX = 0.0;
+volatile float currentGyroY = 0.0;
+volatile float currentGyroZ = 0.0;
 
 volatile int16_t encCountA = 0;
 volatile int16_t encCountB = 0;
 
 AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
 const int MAX_STEPPER_SPPED = 600; // Steps per second
+const int STEPPER_ACCELERATION = 500;
+const int TOTAL_STEPPER_STEPS = 4096; // TODO
+int head_steps = 0;
+volatile int relative_head_direction = 0;
+
+const float MAX_INCLINATION = 20.0; // degree
+static float accumulated_error = 0.0;
 
 // Shared data struct to hold received serial data
 struct CommandData
@@ -92,6 +103,67 @@ float Kp = 0.0;
 // ==========================================
 // 3. HELPER FUNCTIONS
 // ==========================================
+
+// Fast sin/cos lookup tables (1 degree precision)
+static const float sinTable[360] = {
+    0.000000, 0.017452, 0.034899, 0.052336, 0.069756, 0.087156, 0.104528, 0.121869,
+    0.139173, 0.156434, 0.173648, 0.190809, 0.207912, 0.224951, 0.241922, 0.258819,
+    0.275637, 0.292372, 0.309017, 0.325568, 0.342020, 0.358368, 0.374607, 0.390731,
+    0.406737, 0.422618, 0.438371, 0.453990, 0.469472, 0.484810, 0.500000, 0.515038,
+    0.529919, 0.544639, 0.559193, 0.573576, 0.587785, 0.601815, 0.615661, 0.629320,
+    0.642788, 0.656059, 0.669131, 0.681998, 0.694658, 0.707107, 0.719340, 0.731354,
+    0.743145, 0.754710, 0.766044, 0.777146, 0.788011, 0.798636, 0.809017, 0.819152,
+    0.829038, 0.838671, 0.848048, 0.857167, 0.866025, 0.874620, 0.882948, 0.891007,
+    0.898794, 0.906308, 0.913545, 0.920505, 0.927184, 0.933580, 0.939693, 0.945519,
+    0.951057, 0.956305, 0.961262, 0.965926, 0.970296, 0.974370, 0.978148, 0.981627,
+    0.984808, 0.987688, 0.990268, 0.992546, 0.994522, 0.996195, 0.997564, 0.998630,
+    0.999391, 0.999848, 1.000000, 0.999848, 0.999391, 0.998630, 0.997564, 0.996195,
+    0.994522, 0.992546, 0.990268, 0.987688, 0.984808, 0.981627, 0.978148, 0.974370,
+    0.970296, 0.965926, 0.961262, 0.956305, 0.951057, 0.945519, 0.939693, 0.933580,
+    0.927184, 0.920505, 0.913545, 0.906308, 0.898794, 0.891007, 0.882948, 0.874620,
+    0.866025, 0.857167, 0.848048, 0.838671, 0.829038, 0.819152, 0.809017, 0.798636,
+    0.788011, 0.777146, 0.766044, 0.754710, 0.743145, 0.731354, 0.719340, 0.707107,
+    0.694658, 0.681998, 0.669131, 0.656059, 0.642788, 0.629320, 0.615661, 0.601815,
+    0.587785, 0.573576, 0.559193, 0.544639, 0.529919, 0.515038, 0.500000, 0.484810,
+    0.469472, 0.453990, 0.438371, 0.422618, 0.406737, 0.390731, 0.374607, 0.358368,
+    0.342020, 0.325568, 0.309017, 0.292372, 0.275637, 0.258819, 0.241922, 0.224951,
+    0.207912, 0.190809, 0.173648, 0.156434, 0.139173, 0.121869, 0.104528, 0.087156,
+    0.069756, 0.052336, 0.034899, 0.017452, 0.000000, -0.017452, -0.034899, -0.052336,
+    -0.069756, -0.087156, -0.104528, -0.121869, -0.139173, -0.156434, -0.173648, -0.190809,
+    -0.207912, -0.224951, -0.241922, -0.258819, -0.275637, -0.292372, -0.309017, -0.325568,
+    -0.342020, -0.358368, -0.374607, -0.390731, -0.406737, -0.422618, -0.438371, -0.453990,
+    -0.469472, -0.484810, -0.500000, -0.515038, -0.529919, -0.544639, -0.559193, -0.573576,
+    -0.587785, -0.601815, -0.615661, -0.629320, -0.642788, -0.656059, -0.669131, -0.681998,
+    -0.694658, -0.707107, -0.719340, -0.731354, -0.743145, -0.754710, -0.766044, -0.777146,
+    -0.788011, -0.798636, -0.809017, -0.819152, -0.829038, -0.838671, -0.848048, -0.857167,
+    -0.866025, -0.874620, -0.882948, -0.891007, -0.898794, -0.906308, -0.913545, -0.920505,
+    -0.927184, -0.933580, -0.939693, -0.945519, -0.951057, -0.956305, -0.961262, -0.965926,
+    -0.970296, -0.974370, -0.978148, -0.981627, -0.984808, -0.987688, -0.990268, -0.992546,
+    -0.994522, -0.996195, -0.997564, -0.998630, -0.999391, -0.999848, -1.000000, -0.999848,
+    -0.999391, -0.998630, -0.997564, -0.996195, -0.994522, -0.992546, -0.990268, -0.987688,
+    -0.984808, -0.981627, -0.978148, -0.974370, -0.970296, -0.965926, -0.961262, -0.956305,
+    -0.951057, -0.945519, -0.939693, -0.933580, -0.927184, -0.920505, -0.913545, -0.906308,
+    -0.898794, -0.891007, -0.882948, -0.874620, -0.866025, -0.857167, -0.848048, -0.838671,
+    -0.829038, -0.819152, -0.809017, -0.798636, -0.788011, -0.777146, -0.766044, -0.754710,
+    -0.743145, -0.731354, -0.719340, -0.707107, -0.694658, -0.681998, -0.669131, -0.656059,
+    -0.642788, -0.629320, -0.615661, -0.601815, -0.587785, -0.573576, -0.559193, -0.544639,
+    -0.529919, -0.515038, -0.500000, -0.484810, -0.469472, -0.453990, -0.438371, -0.422618,
+    -0.406737, -0.390731, -0.374607, -0.358368, -0.342020, -0.325568, -0.309017, -0.292372,
+    -0.275637, -0.258819, -0.241922, -0.224951, -0.207912, -0.190809, -0.173648, -0.156434,
+    -0.139173, -0.121869, -0.104528, -0.087156, -0.069756, -0.052336, -0.034899, -0.017452};
+
+inline float fastSin(float degrees)
+{
+    int idx = ((int)degrees) % 360;
+    if (idx < 0)
+        idx += 360;
+    return sinTable[idx];
+}
+
+inline float fastCos(float degrees)
+{
+    return fastSin(degrees + 90.0);
+}
 
 void setupMotors()
 {
@@ -130,7 +202,7 @@ void setupHeadStepper()
 {
     // headStepper.setSpeed(10);      // We will set speed in the loop
     headStepper.setMaxSpeed(MAX_STEPPER_SPPED); // Steps per second
-    headStepper.setAcceleration(500);
+    headStepper.setAcceleration(STEPPER_ACCELERATION);
 }
 
 void setMotorSpeed(mcpwm_unit_t unit, float speed)
@@ -140,13 +212,13 @@ void setMotorSpeed(mcpwm_unit_t unit, float speed)
     {
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, speed);
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, 0); // Low
-        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
+        // mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_A, MCPWM_DUTY_MODE_0);
     }
     else
     {
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_A, 0); // Low
         mcpwm_set_duty(unit, MCPWM_TIMER_0, MCPWM_OPR_B, -speed);
-        mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
+        // mcpwm_set_duty_type(unit, MCPWM_TIMER_0, MCPWM_OPR_B, MCPWM_DUTY_MODE_0);
     }
 }
 
@@ -161,10 +233,15 @@ void readIMU()
 {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
+    // TODO check if these values do make sense!
+    currentGyroX = g.gyro.x; // m/s
+    currentGyroY = g.gyro.y; // m/s
+    currentGyroZ = g.gyro.z; // m/s
     currentYaw = a.acceleration.x;
-    currentPitch = a.acceleration.y;
+    currentPitch = a.acceleration.y; // Is this correct?????
     currentRoll = a.acceleration.z;
     // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
+    // Serial.printf("currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentGyroX, currentGyroY, currentGyroZ);
 
     // TODO handle I2C errors here to prevent locking up
 }
@@ -178,6 +255,7 @@ void readIMU()
 // --- CORE 1: REAL-TIME CONTROL TASK ---
 void controlTask(void *pvParameters)
 {
+    // TODO check if this is fast enough
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
 
@@ -199,35 +277,88 @@ void controlTask(void *pvParameters)
 
         readIMU();
 
-        // TODO Encoders:
+        // TODO: where is the center of gravity?
+
+        // ASSUMPTION: BB8 stabilizes itself
+        // CONTROL APPROACH:
+        // - decoupling of the Drive (Velocity) from the Steering (Heading),
+        // - even though both are controlled by the same two motors.
+
+        // TODO Encoders needed?
         // pcnt_get_counter_value(PCNT_UNIT_A, (int16_t *)&encCountA);
         // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
 
-        // TODO: more advanced logic
+        if (ai_mode)
+        {
 
-        float speed = body_force * 100.0;
-        if (body_direction < 90.0)
-        {
-            output_A = speed;
-            output_B = speed * (1.0 - 2.0 * (body_direction / 90.0));
-        }
-        else if (body_direction < 180.0)
-        {
-            output_A = speed * (1.0 - 2.0 * ((body_direction - 90.0) / 90.0));
-            output_B = -speed;
-        }
-        else if (body_direction < 270.0)
-        {
-            output_A = -speed;
-            output_B = speed * (-1.0 + 2.0 * ((body_direction - 180.0) / 90.0));
+            // 0 deg is turn right
+            // 90 deg is drive forward
+            // 180 deg is turn left
+            // 270 deg is drive backward
+            float forward_request = body_force * fastsin(body_direction);
+            float turn_request = body_force * fastCos(body_direction);
+
+            // drive forward, tilt up (Pitch > 0)
+            // drive backward, tilt up (Pitch < 0)
+            // TODO: check if Pitch is correct
+            float inclination_goal = forward_request * MAX_INCLINATION;
+
+            float inclination_error = currentPitch - inclination_goal;
+            accumulated_error += inclination_error;
+            // TODO cap this accumulation? How fast does this windup happen?
+            accumulated_error = constrain(accumulated_error, -50, 50);
+
+            float P_term = Kp * inclination_error;
+            float D_term = Kd * (-currentGyroY);
+            float I_term = Ki * accumulated_error;
+
+            float inclination_output = P_term + I_term + D_term;
+            float turn_output = turn_request * 100; // from -100 (turn left) to 100 (turn right)
+
+            // // FORWARDS
+            // output_A = -100; // left
+            // output_B = 100;  // right
+            // // TURN LEFT
+            // output_A = 100; // left
+            // output_B = 100; // right
+            // // BACKWARDS
+            // output_A = 100;  // left
+            // output_B = -100; // right
+            // // TURN RIGHT
+            // output_A = -100; // left
+            // output_B = -100; // right
+            float output_A = turn_request - inclination_output;
+            float output_B = turn_request + inclination_output;
+
+            output_A = constrain(output_A, -100.0, 100.0);
+            output_B = constrain(output_B, -100.0, 100.0);
         }
         else
         {
-            output_A = speed * (-1.0 + 2.0 * ((body_direction - 270.0) / 90.0));
-            output_B = speed;
+            float speed = body_force * 100.0;
+            if (0.0 <= body_direction && body_direction < 90.0) // turn right (0) --> forward (90)
+            {
+                output_A = -speed;                                      // left fullspeed
+                output_B = speed * fastCos(2 * body_direction + 180.0); // right becomes faster
+            }
+            else if (90.0 <= body_direction && body_direction < 180.0) // forward (90) --> turn left (180)
+            {
+                output_A = speed * fastCos(2 * (body_direction - 90.0) + 180.0); // left becomes slower
+                output_B = speed;                                                // right fullspeed
+            }
+            else if (180.0 <= body_direction && body_direction < 270.0) // turn left (180) --> backwards (270)
+            {
+                output_A = speed;                                         // left fullspeed backwards
+                output_B = speed * fastCos(2 * (body_direction - 180.0)); // right becomes slower
+            }
+            else // (270.0 <= body_direction && body_direction < 360.0) // backwards (270) --> turn right (0)
+            {
+                output_A = speed * fastCos(2 * (body_direction - 270.0)); // left becomes faster
+                output_B = -speed;                                        // right fullspeed backwards
+            }
         }
 
-        // 3. WRITE MOTORS
+        // WRITE MOTORS
         setMotorSpeed(MCPWM_UNIT_0, output_A);
         setMotorSpeed(MCPWM_UNIT_1, output_B);
 
@@ -338,5 +469,7 @@ void loop()
             headStepper.runSpeed();
             // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
         }
+        head_steps = abs(headStepper.currentPosition());
+        relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS)
     }
 }
