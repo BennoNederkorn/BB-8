@@ -234,23 +234,16 @@ void readIMU()
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
     // TODO check if these values do make sense!
-    currentGyroX = g.gyro.x; // m/s
-    currentGyroY = g.gyro.y; // m/s
-    currentGyroZ = g.gyro.z; // m/s
-    currentYaw = a.acceleration.x;
-    currentPitch = a.acceleration.y; // Is this correct?????
+    currentGyroX = g.gyro.x;             // m/s
+    currentGyroY = g.gyro.y;             // m/s
+    currentGyroZ = g.gyro.z;             // m/s
+    currentYaw = a.acceleration.x + 2.4; // hardcode so that we don't need calibration.
+    currentPitch = a.acceleration.y;
     currentRoll = a.acceleration.z;
-    // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
-    // Serial.printf("currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentGyroX, currentGyroY, currentGyroZ);
+    // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f, currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentYaw, currentPitch, currentRoll, currentGyroX, currentGyroY, currentGyroZ);
 
     // TODO handle I2C errors here to prevent locking up
 }
-
-// // returns a value between 1 and -1 for values between 0 and 90
-// float smooth(float angle)
-// {
-//   return math.cos((1 / 90) * angle / (2 * math.pi));
-// }
 
 // --- CORE 1: REAL-TIME CONTROL TASK ---
 void controlTask(void *pvParameters)
@@ -275,6 +268,13 @@ void controlTask(void *pvParameters)
             xSemaphoreGive(dataMutex);
         }
 
+        // Testcode:e
+        // ai_mode = true;
+        // body_force = 1.0;
+        // body_direction = body_direction + 0.1;
+        // if (body_direction > 360.0)
+        //     body_direction = 0.0;
+
         readIMU();
 
         // TODO: where is the center of gravity?
@@ -298,18 +298,17 @@ void controlTask(void *pvParameters)
             float forward_request = body_force * fastSin(body_direction);
             float turn_request = body_force * fastCos(body_direction);
 
-            // drive forward, tilt up (Pitch > 0)
-            // drive backward, tilt up (Pitch < 0)
-            // TODO: check if Pitch is correct
+            // drive forward, tilt up (Yaw < 0)
+            // drive backward, tilt up (Yaw > 0)
             float inclination_goal = forward_request * MAX_INCLINATION;
 
-            float inclination_error = currentPitch - inclination_goal;
+            float inclination_error = currentYaw - inclination_goal;
             accumulated_error += inclination_error;
             // TODO cap this accumulation? How fast does this windup happen?
             accumulated_error = constrain(accumulated_error, -50, 50);
 
             float P_term = Kp * inclination_error;
-            float D_term = Kd * (-currentGyroY);
+            float D_term = Kd * (-currentGyroX); // TODO minus
             float I_term = Ki * accumulated_error;
 
             float inclination_output = P_term + I_term + D_term;
@@ -327,11 +326,13 @@ void controlTask(void *pvParameters)
             // // TURN RIGHT
             // output_A = -100; // left
             // output_B = -100; // right
-            float output_A = turn_request - inclination_output;
-            float output_B = turn_request + inclination_output;
+            float output_A = turn_request - (inclination_output);
+            float output_B = turn_request + (inclination_output);
 
             output_A = constrain(output_A, -100.0, 100.0);
             output_B = constrain(output_B, -100.0, 100.0);
+
+            // Serial.printf("body_direction: %.2f, forward_request: %.2f, turn_request: %.2f, inclination_goal: %.2f, inclination_error: %.2f, currentYaw: %.2f, currentGyroX: %.2f, inclination_output: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentYaw, currentGyroX, inclination_output);
         }
         else
         {
