@@ -96,9 +96,9 @@ float body_direction = 0.0;
 float body_force = 0.0;
 
 // PID tuning parameters
+float Kp = 5.0;
 float Kd = 0.0;
 float Ki = 0.0;
-float Kp = 0.0;
 
 // ==========================================
 // 3. HELPER FUNCTIONS
@@ -295,7 +295,7 @@ void controlTask(void *pvParameters)
             // 90 deg is drive forward
             // 180 deg is turn left
             // 270 deg is drive backward
-            float forward_request = body_force * fastsin(body_direction);
+            float forward_request = body_force * fastSin(body_direction);
             float turn_request = body_force * fastCos(body_direction);
 
             // drive forward, tilt up (Pitch > 0)
@@ -469,7 +469,7 @@ void loop()
             headStepper.runSpeed();
             // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
         }
-        head_steps = abs(headStepper.currentPosition());
-        relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS)
+        // head_steps = abs(headStepper.currentPosition());
+        // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
     }
 }
