@@ -59,12 +59,22 @@ Adafruit_MPU6050 mpu;
 volatile float currentPitch = 0.0;
 volatile float currentRoll = 0.0;
 volatile float currentYaw = 0.0;
+volatile float currentGyroX = 0.0;
+volatile float currentGyroY = 0.0;
+volatile float currentGyroZ = 0.0;
 
 volatile int16_t encCountA = 0;
 volatile int16_t encCountB = 0;
 
 AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
 const int MAX_STEPPER_SPPED = 600; // Steps per second
+const int STEPPER_ACCELERATION = 500;
+const int TOTAL_STEPPER_STEPS = 4096; // TODO
+int head_steps = 0;
+volatile int relative_head_direction = 0;
+
+const float MAX_INCLINATION = 20.0; // degree
+static float accumulated_error = 0.0;
 
 // Shared data struct to hold received serial data
 struct CommandData
@@ -187,7 +197,7 @@ void setupHeadStepper()
 {
     // headStepper.setSpeed(10);      // We will set speed in the loop
     headStepper.setMaxSpeed(MAX_STEPPER_SPPED); // Steps per second
-    headStepper.setAcceleration(500);
+    headStepper.setAcceleration(STEPPER_ACCELERATION);
 }
 
 void setMotorSpeed(mcpwm_unit_t unit, float speed)
@@ -218,10 +228,15 @@ void readIMU()
 {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
+    // TODO check if these values do make sense!
+    currentGyroX = g.gyro.x; // m/s
+    currentGyroY = g.gyro.y; // m/s
+    currentGyroZ = g.gyro.z; // m/s
     currentYaw = a.acceleration.x;
-    currentPitch = a.acceleration.y;
+    currentPitch = a.acceleration.y; // Is this correct?????
     currentRoll = a.acceleration.z;
     // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f\n", currentYaw, currentPitch, currentRoll);
+    // Serial.printf("currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentGyroX, currentGyroY, currentGyroZ);
 
     // TODO handle I2C errors here to prevent locking up
 }
@@ -235,6 +250,7 @@ void readIMU()
 // --- CORE 1: REAL-TIME CONTROL TASK ---
 void controlTask(void *pvParameters)
 {
+    // TODO check if this is fast enough
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
 
@@ -256,48 +272,88 @@ void controlTask(void *pvParameters)
 
         readIMU();
 
-        // TODO Encoders:
+        // TODO: where is the center of gravity?
+
+        // ASSUMPTION: BB8 stabilizes itself
+        // CONTROL APPROACH:
+        // - decoupling of the Drive (Velocity) from the Steering (Heading),
+        // - even though both are controlled by the same two motors.
+
+        // TODO Encoders needed?
         // pcnt_get_counter_value(PCNT_UNIT_A, (int16_t *)&encCountA);
         // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
 
-        // TODO: more advanced logic
+        if (ai_mode)
+        {
 
-        float speed = body_force * 100.0;
-        if (0.0 <= body_direction && body_direction < 90.0) // turn right (0) --> forward (90)
-        {
-            output_A = -speed;                                      // left fullspeed
-            output_B = speed * fastCos(2 * body_direction + 180.0); // right becomes faster
+            // 0 deg is turn right
+            // 90 deg is drive forward
+            // 180 deg is turn left
+            // 270 deg is drive backward
+            float forward_request = body_force * fastsin(body_direction);
+            float turn_request = body_force * fastCos(body_direction);
+
+            // drive forward, tilt up (Pitch > 0)
+            // drive backward, tilt up (Pitch < 0)
+            // TODO: check if Pitch is correct
+            float inclination_goal = forward_request * MAX_INCLINATION;
+
+            float inclination_error = currentPitch - inclination_goal;
+            accumulated_error += inclination_error;
+            // TODO cap this accumulation? How fast does this windup happen?
+            accumulated_error = constrain(accumulated_error, -50, 50);
+
+            float P_term = Kp * inclination_error;
+            float D_term = Kd * (-currentGyroY);
+            float I_term = Ki * accumulated_error;
+
+            float inclination_output = P_term + I_term + D_term;
+            float turn_output = turn_request * 100; // from -100 (turn left) to 100 (turn right)
+
+            // // FORWARDS
+            // output_A = -100; // left
+            // output_B = 100;  // right
+            // // TURN LEFT
+            // output_A = 100; // left
+            // output_B = 100; // right
+            // // BACKWARDS
+            // output_A = 100;  // left
+            // output_B = -100; // right
+            // // TURN RIGHT
+            // output_A = -100; // left
+            // output_B = -100; // right
+            float output_A = turn_request - inclination_output;
+            float output_B = turn_request + inclination_output;
+
+            output_A = constrain(output_A, -100.0, 100.0);
+            output_B = constrain(output_B, -100.0, 100.0);
         }
-        else if (90.0 <= body_direction && body_direction < 180.0) // forward (90) --> turn left (180)
+        else
         {
-            output_A = speed * fastCos(2 * (body_direction - 90.0) + 180.0); // left becomes slower
-            output_B = speed;                                                // right fullspeed
-        }
-        else if (180.0 <= body_direction && body_direction < 270.0) // turn left (180) --> backwards (270)
-        {
-            output_A = speed;                                         // left fullspeed backwards
-            output_B = speed * fastCos(2 * (body_direction - 180.0)); // right becomes slower
-        }
-        else // (270.0 <= body_direction && body_direction < 360.0) // backwards (270) --> turn right (0)
-        {
-            output_A = speed * fastCos(2 * (body_direction - 270.0)); // left becomes faster
-            output_B = -speed;                                        // right fullspeed backwards
+            float speed = body_force * 100.0;
+            if (0.0 <= body_direction && body_direction < 90.0) // turn right (0) --> forward (90)
+            {
+                output_A = -speed;                                      // left fullspeed
+                output_B = speed * fastCos(2 * body_direction + 180.0); // right becomes faster
+            }
+            else if (90.0 <= body_direction && body_direction < 180.0) // forward (90) --> turn left (180)
+            {
+                output_A = speed * fastCos(2 * (body_direction - 90.0) + 180.0); // left becomes slower
+                output_B = speed;                                                // right fullspeed
+            }
+            else if (180.0 <= body_direction && body_direction < 270.0) // turn left (180) --> backwards (270)
+            {
+                output_A = speed;                                         // left fullspeed backwards
+                output_B = speed * fastCos(2 * (body_direction - 180.0)); // right becomes slower
+            }
+            else // (270.0 <= body_direction && body_direction < 360.0) // backwards (270) --> turn right (0)
+            {
+                output_A = speed * fastCos(2 * (body_direction - 270.0)); // left becomes faster
+                output_B = -speed;                                        // right fullspeed backwards
+            }
         }
 
-        // `// FORWARDS`
-        // `output_A = -speed; // left`
-        // `output_B = speed;  // right`
-        // `// TURN LEFT`
-        // `output_A = speed; // left`
-        // `output_B = speed; // right`
-        // `// BACKWARDS`
-        // `output_A = speed;  // left`
-        // `output_B = -speed; // right`
-        // `// TURN RIGHT`
-        // `output_A = -speed; // left`
-        // `output_B = -speed; // right`
-
-        // 3. WRITE MOTORS
+        // WRITE MOTORS
         setMotorSpeed(MCPWM_UNIT_0, output_A);
         setMotorSpeed(MCPWM_UNIT_1, output_B);
 
@@ -404,5 +460,7 @@ void loop()
             headStepper.runSpeed();
             // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
         }
+        head_steps = abs(headStepper.currentPosition());
+        relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS)
     }
 }
