@@ -88,3 +88,30 @@ _Disclaimer: This is a fan-made project. Star Wars and BB-8 are trademarks of Lu
 
 should we use Prettier as Code formatter?
 file -> preferences -> settings -> search for format on save -> enable it
+
+
+
+
+
+# MediaMTX
+ 
+/etc/systemd/system/mediamtx.service
+- automatically starts the MediaMTX server in the background on boot
+- distribute RTSP video streams to connecting clients
+
+/etc/systemd/system/rtsp-stream.service
+- automatically starts an FFmpeg process that captures raw video
+- constantly streams it to the local MediaMTX server
+
+get status:
+```
+systemctl status mediamtx.service
+systemctl status rtsp-stream.service
+```
+
+Restart
+```
+sudo systemctl daemon-reload
+sudo systemctl restart mediamtx.service
+sudo systemctl restart rtsp-stream.service
+```

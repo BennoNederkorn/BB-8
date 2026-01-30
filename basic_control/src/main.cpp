@@ -96,8 +96,17 @@ float head_force = 0.0;
 float body_direction = 0.0;
 float body_force = 0.0;
 
+// data to
+volatile float forward_request = 0.0;
+volatile float turn_request = 0.0;
+volatile float inclination_goal = 0.0;
+volatile float inclination_error = 0.0;
+volatile float inclination_output = 0.0;
+volatile float output_A = 0.0;
+volatile float output_B = 0.0;
+
 // PID tuning parameters
-float Kp = 2.0;
+float Kp = 3.0;
 float Kd = 0.0;
 float Ki = 0.0;
 
@@ -275,21 +284,21 @@ void controlTask(void *pvParameters)
         // Serial.println("CORE 1 Loop: realtime");
 
         // Take the mutex and copy the data to local vars to give it back quickly.
-        // if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
-        // {
-        //     ai_mode = sharedCmd.ai_mode;
-        //     body_direction = sharedCmd.body_direction;
-        //     body_force = sharedCmd.body_force;
-        //     xSemaphoreGive(dataMutex);
-        // }
+        if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
+        {
+            ai_mode = sharedCmd.ai_mode;
+            body_direction = sharedCmd.body_direction;
+            body_force = sharedCmd.body_force;
+            xSemaphoreGive(dataMutex);
+        }
 
         // Testcode: // ROMOVE BEFORE FINAL FLASH!
-        ai_mode = true;
-        body_force = 1.0;
-        body_direction = 90.0;
-        body_direction = body_direction + 0.1;
-        if (body_direction > 360.0)
-            body_direction = 0.0;
+        // ai_mode = true;
+        // body_force = 1.0;
+        // body_direction = 90.0;
+        // body_direction = body_direction + 0.1;
+        // if (body_direction > 360.0)
+        //     body_direction = 0.0;
 
         readIMU();
 
@@ -311,14 +320,14 @@ void controlTask(void *pvParameters)
             // 90 deg is drive forward
             // 180 deg is turn left
             // 270 deg is drive backward
-            float forward_request = body_force * fastSin(body_direction);
-            float turn_request = body_force * fastCos(body_direction);
+            forward_request = body_force * fastSin(body_direction);
+            turn_request = body_force * fastCos(body_direction);
 
             // drive forward, tilt up (currentPitch < 0)
             // drive backward, tilt down (currentPitch > 0)
-            float inclination_goal = forward_request * MAX_INCLINATION;
+            inclination_goal = forward_request * MAX_INCLINATION;
 
-            float inclination_error = inclination_goal + currentPitch; // Pitch is negetive
+            inclination_error = inclination_goal + currentPitch; // Pitch is negetive
             accumulated_error += inclination_error;
             // TODO cap this accumulation? How fast does this windup happen?
             accumulated_error = constrain(accumulated_error, -50, 50);
@@ -327,7 +336,7 @@ void controlTask(void *pvParameters)
             float D_term = Kd * (-currentGyroX); // TODO minus
             float I_term = Ki * accumulated_error;
 
-            float inclination_output = P_term + I_term + D_term;
+            inclination_output = P_term + I_term + D_term;
             float turn_output = turn_request * 100; // from -100 (turn left) to 100 (turn right)
 
             // // FORWARDS
@@ -349,7 +358,7 @@ void controlTask(void *pvParameters)
             output_B = constrain(output_B, -100.0, 100.0);
 
             // Serial.printf("body_direction: %.2f, forward_request: %.2f, turn_request: %.2f, inclination_goal: %.2f, inclination_error: %.2f, currentYaw: %.2f, currentGyroX: %.2f, inclination_output: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentYaw, currentGyroX, inclination_output);
-            Serial.printf("body_dir: %.2f, frw_request: %.2f, trn_request: %.2f, incli_goal: %.2f, incli_error: %.2f, curPitch: %.2f, incli_output: %.2f, out_A: %.2f, out_B: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentPitch, inclination_output, output_A, output_B);
+            // Serial.printf("body_dir: %.2f, frw_request: %.2f, trn_request: %.2f, incli_goal: %.2f, incli_error: %.2f, curPitch: %.2f, incli_output: %.2f, out_A: %.2f, out_B: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentPitch, inclination_output, output_A, output_B);
         }
         else
         {
@@ -382,6 +391,17 @@ void controlTask(void *pvParameters)
 
         // Wait specifically until 10ms have passed since last run
         vTaskDelayUntil(&xLastWakeTime, xFrequency);
+    }
+}
+
+static unsigned long last_telemetry_time = 0;
+const unsigned long TELEMETRY_INTERVAL = 50;
+void send_data_to_jetson()
+{
+    if (millis() - last_telemetry_time > TELEMETRY_INTERVAL)
+    {
+        last_telemetry_time = millis();
+        Serial.printf("%f,%f,%f,%f,%f,%f,%f,%f,%f\n", forward_request, turn_request, inclination_goal, inclination_error, currentPitch, currentYaw, inclination_output, output_A, output_B);
     }
 }
 
@@ -437,57 +457,59 @@ void loop()
     // It will not slow down the motors because they are in the 'controlTask'
 
     // Check for incoming serial commands here
-    // if (Serial.available() > 0)
-    // {
-    //     // Read the line until a newline character
-    //     String line = Serial.readStringUntil('\n');
+    if (Serial.available() > 0)
+    {
 
-    //     // Simple Parsing using sscanf
-    //     // temporary variables to ensure data integrity during parsing
-    //     int temp_ai;
-    //     float temp_hd, temp_hf, temp_bd, temp_bf;
-    //     float temp_kp, temp_ki, temp_kd;
+        // Read the line until a newline character
+        String line = Serial.readStringUntil('\n');
 
-    //     // sscanf parses the CSV string. Returns number of items successfully matched.
-    //     int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
-    //                        &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
+        // Simple Parsing using sscanf
+        // temporary variables to ensure data integrity during parsing
+        int temp_ai;
+        float temp_hd, temp_hf, temp_bd, temp_bf;
+        float temp_kp, temp_ki, temp_kd;
 
-    //     // If we found all 5 items, update our global variables
-    //     if (items == 8)
-    //     {
-    //         if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
-    //         {
-    //             sharedCmd.ai_mode = (temp_ai == 1);
-    //             sharedCmd.head_direction = temp_hd;
-    //             sharedCmd.head_force = temp_hf;
-    //             sharedCmd.body_direction = temp_bd;
-    //             sharedCmd.body_force = temp_bf;
-    //             head_direction = temp_hd;
-    //             head_force = temp_hf;
-    //             Kp = temp_kp;
-    //             Ki = temp_ki;
-    //             Kd = temp_kd;
-    //             xSemaphoreGive(dataMutex);
-    //             // new_command_received = true;
-    //         }
-    //     }
-    // }
+        // sscanf parses the CSV string. Returns number of items successfully matched.
+        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
+                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
 
-    // if (head_force != 0.0)
-    // {
-    //     if (head_direction == 0.0)
-    //     {
-    //         headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-    //         headStepper.runSpeed();
-    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-    //     }
-    //     if (head_direction == 180.0)
-    //     {
-    //         headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-    //         headStepper.runSpeed();
-    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-    //     }
-    //     // head_steps = abs(headStepper.currentPosition());
-    //     // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
-    // }
+        // If we found all 5 items, update our global variables
+        if (items == 8)
+        {
+            if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
+            {
+                sharedCmd.ai_mode = (temp_ai == 1);
+                sharedCmd.head_direction = temp_hd;
+                sharedCmd.head_force = temp_hf;
+                sharedCmd.body_direction = temp_bd;
+                sharedCmd.body_force = temp_bf;
+                head_direction = temp_hd;
+                head_force = temp_hf;
+                Kp = temp_kp;
+                Ki = temp_ki;
+                Kd = temp_kd;
+                xSemaphoreGive(dataMutex);
+                // new_command_received = true;
+            }
+        }
+        send_data_to_jetson();
+    }
+
+    if (head_force != 0.0)
+    {
+        if (head_direction == 0.0)
+        {
+            headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+            headStepper.runSpeed();
+            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+        }
+        if (head_direction == 180.0)
+        {
+            headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+            headStepper.runSpeed();
+            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+        }
+        // head_steps = abs(headStepper.currentPosition());
+        // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
+    }
 }
