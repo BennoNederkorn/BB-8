@@ -1,5 +1,5 @@
 bool ai_mode
-float64 head_direction
-float64 head_force
-float64 body_direction
-float64 body_force
+float32 head_direction
+float32 head_force
+float32 body_direction
+float32 body_force

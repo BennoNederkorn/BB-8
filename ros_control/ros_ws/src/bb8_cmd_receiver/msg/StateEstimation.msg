@@ -1,0 +1,9 @@
+float32 forward_request
+float32 turn_request
+float32 inclination_goal
+float32 inclination_error
+float32 current_pitch
+float32 current_yaw
+float32 inclination_output
+float32 motor_a_output
+float32 motor_b_output
