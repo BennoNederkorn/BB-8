@@ -106,9 +106,9 @@ volatile float output_A = 0.0;
 volatile float output_B = 0.0;
 
 // PID tuning parameters
-float Kp = 3.0;
-float Kd = 0.0;
-float Ki = 0.0;
+volatile float Kp = 3.0;
+volatile float Kd = 0.0;
+volatile float Ki = 0.0;
 
 // ==========================================
 // 3. HELPER FUNCTIONS
@@ -492,8 +492,8 @@ void loop()
                 // new_command_received = true;
             }
         }
-        send_data_to_jetson();
     }
+    send_data_to_jetson();
 
     if (head_force != 0.0)
     {
