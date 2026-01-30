@@ -75,6 +75,7 @@ volatile int relative_head_direction = 0;
 
 const float MAX_INCLINATION = 20.0; // degree
 static float accumulated_error = 0.0;
+static float lastTime = millis() / 1000.0;
 
 // Shared data struct to hold received serial data
 struct CommandData
@@ -96,7 +97,7 @@ float body_direction = 0.0;
 float body_force = 0.0;
 
 // PID tuning parameters
-float Kp = 5.0;
+float Kp = 2.0;
 float Kd = 0.0;
 float Ki = 0.0;
 
@@ -233,13 +234,27 @@ void readIMU()
 {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    // TODO check if these values do make sense!
-    currentGyroX = g.gyro.x;             // m/s
-    currentGyroY = g.gyro.y;             // m/s
-    currentGyroZ = g.gyro.z;             // m/s
-    currentYaw = a.acceleration.x + 2.4; // hardcode so that we don't need calibration.
-    currentPitch = a.acceleration.y;
-    currentRoll = a.acceleration.z;
+    // TODO: check if these values still make sense!
+    float ErrGyroX = -0.025427; // m/s
+    float ErrGyroY = 0.019571;  // m/s
+    float ErrGyroZ = 0.001894;  // m/s
+
+    currentGyroX = g.gyro.x - ErrGyroX; // m/s
+    currentGyroY = g.gyro.y - ErrGyroY; // m/s
+    currentGyroZ = g.gyro.z - ErrGyroZ; // m/s
+
+    unsigned long currentTime = millis();         // ms
+    float dt = (currentTime - lastTime) / 1000.0; // s
+    lastTime = currentTime;                       // s
+
+    float rad_to_deg = 57.2957795130823209;         // 360 / 2pi
+    currentRoll += currentGyroX * rad_to_deg * dt;  // deg
+    currentPitch += currentGyroY * rad_to_deg * dt; // deg
+    currentYaw += currentGyroZ * rad_to_deg * dt;   // deg
+
+    // currentYaw = a.acceleration.x;
+    // currentPitch = a.acceleration.y;
+    // currentRoll = a.acceleration.z;
     // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f, currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentYaw, currentPitch, currentRoll, currentGyroX, currentGyroY, currentGyroZ);
 
     // TODO handle I2C errors here to prevent locking up
@@ -260,20 +275,21 @@ void controlTask(void *pvParameters)
         // Serial.println("CORE 1 Loop: realtime");
 
         // Take the mutex and copy the data to local vars to give it back quickly.
-        if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
-        {
-            ai_mode = sharedCmd.ai_mode;
-            body_direction = sharedCmd.body_direction;
-            body_force = sharedCmd.body_force;
-            xSemaphoreGive(dataMutex);
-        }
+        // if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
+        // {
+        //     ai_mode = sharedCmd.ai_mode;
+        //     body_direction = sharedCmd.body_direction;
+        //     body_force = sharedCmd.body_force;
+        //     xSemaphoreGive(dataMutex);
+        // }
 
-        // Testcode:e
-        // ai_mode = true;
-        // body_force = 1.0;
-        // body_direction = body_direction + 0.1;
-        // if (body_direction > 360.0)
-        //     body_direction = 0.0;
+        // Testcode: // ROMOVE BEFORE FINAL FLASH!
+        ai_mode = true;
+        body_force = 1.0;
+        body_direction = 90.0;
+        body_direction = body_direction + 0.1;
+        if (body_direction > 360.0)
+            body_direction = 0.0;
 
         readIMU();
 
@@ -298,11 +314,11 @@ void controlTask(void *pvParameters)
             float forward_request = body_force * fastSin(body_direction);
             float turn_request = body_force * fastCos(body_direction);
 
-            // drive forward, tilt up (Yaw < 0)
-            // drive backward, tilt up (Yaw > 0)
+            // drive forward, tilt up (currentPitch < 0)
+            // drive backward, tilt down (currentPitch > 0)
             float inclination_goal = forward_request * MAX_INCLINATION;
 
-            float inclination_error = currentYaw - inclination_goal;
+            float inclination_error = inclination_goal + currentPitch; // Pitch is negetive
             accumulated_error += inclination_error;
             // TODO cap this accumulation? How fast does this windup happen?
             accumulated_error = constrain(accumulated_error, -50, 50);
@@ -326,13 +342,14 @@ void controlTask(void *pvParameters)
             // // TURN RIGHT
             // output_A = -100; // left
             // output_B = -100; // right
-            float output_A = turn_request - (inclination_output);
-            float output_B = turn_request + (inclination_output);
+            output_A = turn_output - (inclination_output);
+            output_B = turn_output + (inclination_output);
 
             output_A = constrain(output_A, -100.0, 100.0);
             output_B = constrain(output_B, -100.0, 100.0);
 
             // Serial.printf("body_direction: %.2f, forward_request: %.2f, turn_request: %.2f, inclination_goal: %.2f, inclination_error: %.2f, currentYaw: %.2f, currentGyroX: %.2f, inclination_output: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentYaw, currentGyroX, inclination_output);
+            Serial.printf("body_dir: %.2f, frw_request: %.2f, trn_request: %.2f, incli_goal: %.2f, incli_error: %.2f, curPitch: %.2f, incli_output: %.2f, out_A: %.2f, out_B: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentPitch, inclination_output, output_A, output_B);
         }
         else
         {
@@ -389,8 +406,8 @@ void setup()
     }
 
     // Setup MPU ranges if necessary
-    mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-    mpu.setGyroRange(MPU6050_RANGE_500_DEG);
+    mpu.setAccelerometerRange(MPU6050_RANGE_2_G);
+    mpu.setGyroRange(MPU6050_RANGE_250_DEG);
     mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
 
     setupMotors();
@@ -420,57 +437,57 @@ void loop()
     // It will not slow down the motors because they are in the 'controlTask'
 
     // Check for incoming serial commands here
-    if (Serial.available() > 0)
-    {
-        // Read the line until a newline character
-        String line = Serial.readStringUntil('\n');
+    // if (Serial.available() > 0)
+    // {
+    //     // Read the line until a newline character
+    //     String line = Serial.readStringUntil('\n');
 
-        // Simple Parsing using sscanf
-        // temporary variables to ensure data integrity during parsing
-        int temp_ai;
-        float temp_hd, temp_hf, temp_bd, temp_bf;
-        float temp_kp, temp_ki, temp_kd;
+    //     // Simple Parsing using sscanf
+    //     // temporary variables to ensure data integrity during parsing
+    //     int temp_ai;
+    //     float temp_hd, temp_hf, temp_bd, temp_bf;
+    //     float temp_kp, temp_ki, temp_kd;
 
-        // sscanf parses the CSV string. Returns number of items successfully matched.
-        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
-                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
+    //     // sscanf parses the CSV string. Returns number of items successfully matched.
+    //     int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
+    //                        &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
 
-        // If we found all 5 items, update our global variables
-        if (items == 8)
-        {
-            if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
-            {
-                sharedCmd.ai_mode = (temp_ai == 1);
-                sharedCmd.head_direction = temp_hd;
-                sharedCmd.head_force = temp_hf;
-                sharedCmd.body_direction = temp_bd;
-                sharedCmd.body_force = temp_bf;
-                head_direction = temp_hd;
-                head_force = temp_hf;
-                Kp = temp_kp;
-                Ki = temp_ki;
-                Kd = temp_kd;
-                xSemaphoreGive(dataMutex);
-                // new_command_received = true;
-            }
-        }
-    }
+    //     // If we found all 5 items, update our global variables
+    //     if (items == 8)
+    //     {
+    //         if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
+    //         {
+    //             sharedCmd.ai_mode = (temp_ai == 1);
+    //             sharedCmd.head_direction = temp_hd;
+    //             sharedCmd.head_force = temp_hf;
+    //             sharedCmd.body_direction = temp_bd;
+    //             sharedCmd.body_force = temp_bf;
+    //             head_direction = temp_hd;
+    //             head_force = temp_hf;
+    //             Kp = temp_kp;
+    //             Ki = temp_ki;
+    //             Kd = temp_kd;
+    //             xSemaphoreGive(dataMutex);
+    //             // new_command_received = true;
+    //         }
+    //     }
+    // }
 
-    if (head_force != 0.0)
-    {
-        if (head_direction == 0.0)
-        {
-            headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-            headStepper.runSpeed();
-            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-        }
-        if (head_direction == 180.0)
-        {
-            headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-            headStepper.runSpeed();
-            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-        }
-        // head_steps = abs(headStepper.currentPosition());
-        // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
-    }
+    // if (head_force != 0.0)
+    // {
+    //     if (head_direction == 0.0)
+    //     {
+    //         headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+    //         headStepper.runSpeed();
+    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+    //     }
+    //     if (head_direction == 180.0)
+    //     {
+    //         headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+    //         headStepper.runSpeed();
+    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+    //     }
+    //     // head_steps = abs(headStepper.currentPosition());
+    //     // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
+    // }
 }
