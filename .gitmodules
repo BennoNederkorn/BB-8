@@ -1,9 +1,6 @@
-[submodule "WebRTC_HandshakeServer"]
-	path = WebRTC_HandshakeServer
-	url = git@github.com:BennoNederkorn/WebRTC_HandshakeServer.git
 [submodule "HumanMachineInterface"]
 	path = HumanMachineInterface
 	url = git@github.com:BennoNederkorn/HumanMachineInterface.git
 [submodule "SentryDashboard"]
 	path = SentryDashboard
-	url = https://github.com/leezhuole/video-analytics-frontend.git
+	url = git@github.com:leezhuole/video-analytics-frontend.git
