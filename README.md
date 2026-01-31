@@ -124,7 +124,6 @@ sudo systemctl restart rtsp-stream.service
 5. 
 
 
-
 ## Software
 ### Terminal 1
 1. SSH breakingbytes@100.93.171.127 | password: 
@@ -137,7 +136,7 @@ sudo systemctl restart rtsp-stream.service
 8. ros2 launch bb8_cmd_receiver bridge.launch.xml
 - Looking to automate steps 5-7
 
-### Terminal 2 (Potentially Obsolete)
+<!-- ### Terminal 2 (Potentially Obsolete)
 1. SSH breakingbytes@100.93.171.127 | password: 
 2. cd Documents/BB-8
 4. docker exec -it ros_control /bin/bash
@@ -145,7 +144,7 @@ sudo systemctl restart rtsp-stream.service
 6. colon build
 7. source install/setup.bash
 8. ros2 run bb8_cmd_receiver command_receiver
-- Writing a launch file to start command receiver from the same terminal as terminal 1
+- Writing a launch file to start command receiver from the same terminal as terminal 1 -->
 
 # Terminal 3 - AI Inference
 1. SSH breakingbytes@100.93.171.127 | password: 
