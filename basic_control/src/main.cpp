@@ -238,33 +238,66 @@ void setupEncoder(int unit, int pinA, int pinB)
     // TODO
 }
 
-// --- IMU HELPER (Basic Reading) ---
+// --- IMU HELPER (Complementary Filter) ---
+// Combines gyroscope (accurate short-term) with accelerometer (stable long-term)
+// to eliminate gyroscope drift while maintaining smooth response
 void readIMU()
 {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    // TODO: check if these values still make sense!
-    float ErrGyroX = -0.025427; // m/s
-    float ErrGyroY = 0.019571;  // m/s
-    float ErrGyroZ = 0.001894;  // m/s
+    
+    // Gyroscope bias correction (calibrated while stationary)
+    float ErrGyroX = -0.025427; // rad/s
+    float ErrGyroY = 0.019571;  // rad/s
+    float ErrGyroZ = 0.001894;  // rad/s
 
-    currentGyroX = g.gyro.x - ErrGyroX; // m/s
-    currentGyroY = g.gyro.y - ErrGyroY; // m/s
-    currentGyroZ = g.gyro.z - ErrGyroZ; // m/s
+    currentGyroX = g.gyro.x - ErrGyroX; // rad/s
+    currentGyroY = g.gyro.y - ErrGyroY; // rad/s
+    currentGyroZ = g.gyro.z - ErrGyroZ; // rad/s
 
+    // Time delta calculation
     unsigned long currentTime = millis();         // ms
     float dt = (currentTime - lastTime) / 1000.0; // s
     lastTime = currentTime;                       // s
 
-    float rad_to_deg = 57.2957795130823209;         // 360 / 2pi
-    currentRoll += currentGyroX * rad_to_deg * dt;  // deg
-    currentPitch += currentGyroY * rad_to_deg * dt; // deg
-    currentYaw += currentGyroZ * rad_to_deg * dt;   // deg
+    float rad_to_deg = 57.2957795130823209; // 180/π
 
-    // currentYaw = a.acceleration.x;
-    // currentPitch = a.acceleration.y;
-    // currentRoll = a.acceleration.z;
-    // Serial.printf("currentYaw: %.2f, currentPitch: %.2f, currentRoll: %.2f, currentGyroX: %.2f, currentGyroY: %.2f, currentGyroZ: %.2f\n", currentYaw, currentPitch, currentRoll, currentGyroX, currentGyroY, currentGyroZ);
+    // ========================================
+    // ACCELEROMETER ANGLE CALCULATION
+    // ========================================
+    // These give absolute angles from gravity vector (no drift, but noisy)
+    float accelPitch = atan2(
+        a.acceleration.y,
+        sqrt(a.acceleration.x * a.acceleration.x + a.acceleration.z * a.acceleration.z)
+    ) * rad_to_deg;
+    
+    float accelRoll = atan2(
+        -a.acceleration.x,
+        a.acceleration.z
+    ) * rad_to_deg;
+
+    // ========================================
+    // COMPLEMENTARY FILTER
+    // ========================================
+    // α = 0.98: Trust gyro 98%, accelerometer 2%
+    // Time constant τ = α·dt/(1-α) ≈ 0.49s at 100Hz
+    // Drift correction occurs within ~2.5 seconds (5τ)
+    const float alpha = 0.98;
+    
+    // Gyro prediction: current angle + angular velocity * time
+    float gyroPitchPrediction = currentPitch + currentGyroY * rad_to_deg * dt;
+    float gyroRollPrediction = currentRoll + currentGyroX * rad_to_deg * dt;
+    
+    // Fuse: high-pass filter on gyro + low-pass filter on accelerometer
+    currentPitch = alpha * gyroPitchPrediction + (1.0 - alpha) * accelPitch;
+    currentRoll = alpha * gyroRollPrediction + (1.0 - alpha) * accelRoll;
+    
+    // ========================================
+    // YAW (No absolute reference available)
+    // ========================================
+    // Yaw will still drift without a magnetometer - no gravity reference exists
+    // Consider adding magnetometer (MPU9250) or periodic reset for stable yaw
+    currentYaw += currentGyroZ * rad_to_deg * dt;
 
     // TODO handle I2C errors here to prevent locking up
 }
@@ -362,7 +395,7 @@ void controlTask(void *pvParameters)
         }
         else
         {
-            float speed = body_force * 100.0;
+            float speed = body_force * 30.0;
             if (0.0 <= body_direction && body_direction < 90.0) // turn right (0) --> forward (90)
             {
                 output_A = -speed;                                      // left fullspeed
