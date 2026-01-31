@@ -39,6 +39,7 @@ def _read_cpu_temp_c() -> float:
 
 
 def _read_ram_usage_pct() -> float:
+    """Read actual RAM usage excluding buffers/cache."""
     meminfo = {}
     try:
         with open("/proc/meminfo", "r") as f:
@@ -48,10 +49,15 @@ def _read_ram_usage_pct() -> float:
                     key, val = parts
                     meminfo[key] = float(val.strip().split()[0])
         mem_total = meminfo.get("MemTotal", 0.0)
-        mem_available = meminfo.get("MemAvailable", mem_total)
+        mem_free = meminfo.get("MemFree", 0.0)
+        buffers = meminfo.get("Buffers", 0.0)
+        cached = meminfo.get("Cached", 0.0)
+        s_reclaimable = meminfo.get("SReclaimable", 0.0)
+        
+        # Actual used = Total - Free - Buffers - Cached - SReclaimable
         if mem_total > 0:
-            used = mem_total - mem_available
-            return (used / mem_total) * 100.0
+            used = mem_total - mem_free - buffers - cached - s_reclaimable
+            return max(0.0, (used / mem_total) * 100.0)
     except Exception:
         pass
     return 35.0 + random.random() * 10.0
@@ -66,6 +72,19 @@ def _read_gpu_load_pct() -> float:
             return round(pct, 2)
     except Exception:
         return 0.0 + random.random() * 5.0
+
+
+def _read_battery_voltage() -> float:
+    """Read battery voltage from INA3221 power monitor on Jetson."""
+    path = "/sys/bus/i2c/drivers/ina3221x/6-0040/iio:device0/in_voltage0_input"
+    try:
+        with open(path, "r") as f:
+            # Value is typically in millivolts
+            mv = float(f.read().strip())
+            return mv / 1000.0  # Convert to volts
+    except Exception:
+        pass
+    return 0.0
 
 
 async def broadcast_loop(
@@ -98,6 +117,7 @@ async def telemetry_loop(
             "cpu_temp": round(_read_cpu_temp_c(), 2),
             "ram_usage": round(_read_ram_usage_pct(), 2),
             "gpu_load": round(_read_gpu_load_pct(), 2),
+            "battery_voltage": round(_read_battery_voltage(), 2),
             "inference_fps": 0.0,
             "state": "ARMED",
         }
@@ -188,6 +208,7 @@ def inference_worker(
                 "cpu_temp": round(_read_cpu_temp_c(), 2),
                 "ram_usage": round(_read_ram_usage_pct(), 2),
                 "gpu_load": round(_read_gpu_load_pct(), 2),
+                "battery_voltage": round(_read_battery_voltage(), 2),
                 "inference_fps": round(fps, 2),
                 "state": "ARMED",
             }))

@@ -7,3 +7,4 @@ float32 current_yaw
 float32 inclination_output
 float32 motor_a_output
 float32 motor_b_output
+float32 gyro_y
