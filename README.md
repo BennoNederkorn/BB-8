@@ -90,9 +90,6 @@ should we use Prettier as Code formatter?
 file -> preferences -> settings -> search for format on save -> enable it
 
 
-
-
-
 # MediaMTX
  
 /etc/systemd/system/mediamtx.service
@@ -115,3 +112,50 @@ sudo systemctl daemon-reload
 sudo systemctl restart mediamtx.service
 sudo systemctl restart rtsp-stream.service
 ```
+
+# Starting up the system
+## Hardware
+1. Connect XT60 connectors and check all the connections on both power lines
+2. Turn on the green power switch
+3. Check the ESP32 breakout board if the power switch is turned on (esp32 receives power from battery)
+4. Give one check over all the wire connections
+    - Power jack to ESP32 breakout board
+    - Power jack to NVIDIA Jetson Nano
+5. 
+
+
+
+## Software
+### Terminal 1
+1. SSH breakingbytes@100.93.171.127 | password: 
+2. cd Documents/BB-8
+3. docker-compose up -d
+4. docker exec -it ros_control /bin/bash
+5. cd root/ros_ws/
+6. colon build
+7. source install/setup.bash
+8. ros2 launch bb8_cmd_receiver bridge.launch.xml
+- Looking to automate steps 5-7
+
+### Terminal 2 (Potentially Obsolete)
+1. SSH breakingbytes@100.93.171.127 | password: 
+2. cd Documents/BB-8
+4. docker exec -it ros_control /bin/bash
+5. cd root/ros_ws/
+6. colon build
+7. source install/setup.bash
+8. ros2 run bb8_cmd_receiver command_receiver
+- Writing a launch file to start command receiver from the same terminal as terminal 1
+
+# Terminal 3 - AI Inference
+1. SSH breakingbytes@100.93.171.127 | password: 
+2. cd Documents/BB-8
+4. docker exec -it ai_inference /bin/bash
+5. cd python
+6. python3 -m face_service --network=facenet --headless --ws-port=9091 --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
+
+# Terminal 4 - Dashboard
+1. cd to project repository root
+2. cd SentryDashboard\sentry-dashboard
+3. ng serve
+
