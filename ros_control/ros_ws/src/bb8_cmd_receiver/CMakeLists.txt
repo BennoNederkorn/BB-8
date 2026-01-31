@@ -13,6 +13,8 @@ find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HMICmds.msg"
+  "msg/StateEstimation.msg"
+  "msg/PIDParams.msg"
   DEPENDENCIES std_msgs
 )
 

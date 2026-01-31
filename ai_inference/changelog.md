@@ -44,3 +44,17 @@ We will port the vanilla JavaScript from the repository (``webrtc.js``) into a c
         ros2 topic info /detectnet/detections
         ros2 interface show <the_type_returned_above>
         ```
+
+
+
+[29.01.2026]
+1. Fix the sentry dashboard because some values are missing
+    - Battery value
+    - RAM usage is constant
+    - outbound bitrate
+    - outbound fps
+2. Write shutdown script for the NVIDIA Jetson (check this, because this shuts down the Jetson prematurely and might not stop the containers)
+3. Write state machine for the NVIDIA Jetson and hook it up with LEDs -- eventually do this with a LED strip wired under the board
+4. Implement gesture recognition
+5. Implement a local LLM?
+6. Plan out the wiring that I want to do for the bigger stepper and prepare the wires
