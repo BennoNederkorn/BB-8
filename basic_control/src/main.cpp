@@ -276,8 +276,8 @@ void controlTask(void *pvParameters)
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
 
-    float output_A = 0.0;
-    float output_B = 0.0;
+    // float output_A = 0.0;
+    // float output_B = 0.0;
 
     for (;;)
     {
@@ -401,7 +401,7 @@ void send_data_to_jetson()
     if (millis() - last_telemetry_time > TELEMETRY_INTERVAL)
     {
         last_telemetry_time = millis();
-        Serial.printf("%f,%f,%f,%f,%f,%f,%f,%f,%f\n", forward_request, turn_request, inclination_goal, inclination_error, currentPitch, currentYaw, inclination_output, output_A, output_B);
+        Serial.printf("%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n", forward_request, turn_request, inclination_goal, inclination_error, currentPitch, currentYaw, inclination_output, output_A, output_B, currentGyroY);
     }
 }
 
