@@ -153,14 +153,14 @@ void CommandReceiver::serial_read_callback()
             serial_buffer_.erase(0, newline_pos + 1);
             
             // Parse ESP32 CSV format:
-            // "frw_request,trn_request,incli_goal,incli_error,cur_pitch,cur_yaw,incli_output,out_A,out_B"
-            float frw_req, trn_req, incli_goal, incli_error, cur_pitch, cur_yaw, incli_output, out_a, out_b;
+            // "frw_request,trn_request,incli_goal,incli_error,cur_pitch,cur_yaw,incli_output,out_A,out_B,gyro_y"
+            float frw_req, trn_req, incli_goal, incli_error, cur_pitch, cur_yaw, incli_output, out_a, out_b, gyro_y;
             
             int items = sscanf(line.c_str(),
-                "%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                &frw_req, &trn_req, &incli_goal, &incli_error, &cur_pitch, &cur_yaw, &incli_output, &out_a, &out_b);
+                "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
+                &frw_req, &trn_req, &incli_goal, &incli_error, &cur_pitch, &cur_yaw, &incli_output, &out_a, &out_b, &gyro_y);
             
-            if (items == 9)
+            if (items == 10)
             {
                 auto state_msg = bb8_cmd_receiver::msg::StateEstimation();
                 state_msg.forward_request = frw_req;
@@ -172,6 +172,7 @@ void CommandReceiver::serial_read_callback()
                 state_msg.inclination_output = incli_output;
                 state_msg.motor_a_output = out_a;
                 state_msg.motor_b_output = out_b;
+                state_msg.gyro_y = gyro_y;
                 
                 state_publisher_->publish(state_msg);
             }
