@@ -14,10 +14,12 @@
 // ==========================================
 
 // Stepper (Head)
-#define STEPPER_PIN1 19
-#define STEPPER_PIN3 5
-#define STEPPER_PIN2 18
-#define STEPPER_PIN4 17
+// #define STEPPER_PIN1 19
+// #define STEPPER_PIN3 5
+// #define STEPPER_PIN2 18
+// #define STEPPER_PIN4 17
+#define STEPPER_DIRECTION 19 // DIR+
+#define STEPPER_STEP 18      // PUL+
 
 // I2C IMU
 #define SDA_PIN 21
@@ -66,9 +68,10 @@ volatile float currentGyroZ = 0.0;
 volatile int16_t encCountA = 0;
 volatile int16_t encCountB = 0;
 
-AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
-const int MAX_STEPPER_SPPED = 600; // Steps per second
-const int STEPPER_ACCELERATION = 500;
+// AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
+AccelStepper headStepper(AccelStepper::DRIVER, STEPPER_STEP, STEPPER_DIRECTION);
+const int MAX_STEPPER_SPPED = 2000; // Steps per second
+const int STEPPER_ACCELERATION = 1000;
 const int TOTAL_STEPPER_STEPS = 4096; // TODO
 int head_steps = 0;
 volatile int relative_head_direction = 0;
@@ -245,7 +248,7 @@ void readIMU()
 {
     sensors_event_t a, g, temp;
     mpu.getEvent(&a, &g, &temp);
-    
+
     // Gyroscope bias correction (calibrated while stationary)
     float ErrGyroX = -0.025427; // rad/s
     float ErrGyroY = 0.019571;  // rad/s
@@ -267,14 +270,14 @@ void readIMU()
     // ========================================
     // These give absolute angles from gravity vector (no drift, but noisy)
     float accelPitch = atan2(
-        a.acceleration.y,
-        sqrt(a.acceleration.x * a.acceleration.x + a.acceleration.z * a.acceleration.z)
-    ) * rad_to_deg;
-    
+                           a.acceleration.y,
+                           sqrt(a.acceleration.x * a.acceleration.x + a.acceleration.z * a.acceleration.z)) *
+                       rad_to_deg;
+
     float accelRoll = atan2(
-        -a.acceleration.x,
-        a.acceleration.z
-    ) * rad_to_deg;
+                          -a.acceleration.x,
+                          a.acceleration.z) *
+                      rad_to_deg;
 
     // ========================================
     // COMPLEMENTARY FILTER
@@ -282,16 +285,16 @@ void readIMU()
     // α = 0.98: Trust gyro 98%, accelerometer 2%
     // Time constant τ = α·dt/(1-α) ≈ 0.49s at 100Hz
     // Drift correction occurs within ~2.5 seconds (5τ)
-    const float alpha = 0.98;
-    
+    const float alpha = 1.0;
+
     // Gyro prediction: current angle + angular velocity * time
     float gyroPitchPrediction = currentPitch + currentGyroY * rad_to_deg * dt;
     float gyroRollPrediction = currentRoll + currentGyroX * rad_to_deg * dt;
-    
+
     // Fuse: high-pass filter on gyro + low-pass filter on accelerometer
     currentPitch = alpha * gyroPitchPrediction + (1.0 - alpha) * accelPitch;
     currentRoll = alpha * gyroRollPrediction + (1.0 - alpha) * accelRoll;
-    
+
     // ========================================
     // YAW (No absolute reference available)
     // ========================================
@@ -366,7 +369,7 @@ void controlTask(void *pvParameters)
             accumulated_error = constrain(accumulated_error, -50, 50);
 
             float P_term = Kp * inclination_error;
-            float D_term = Kd * (-currentGyroX); // TODO minus
+            float D_term = Kd * (-currentGyroY); // TODO minus
             float I_term = Ki * accumulated_error;
 
             inclination_output = P_term + I_term + D_term;
@@ -528,21 +531,33 @@ void loop()
     }
     send_data_to_jetson();
 
-    if (head_force != 0.0)
+    float current_speed = 0.0;
+    if (head_direction == 0.0)
     {
-        if (head_direction == 0.0)
-        {
-            headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-            headStepper.runSpeed();
-            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-        }
-        if (head_direction == 180.0)
-        {
-            headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-            headStepper.runSpeed();
-            // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-        }
-        // head_steps = abs(headStepper.currentPosition());
-        // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
+        current_speed = MAX_STEPPER_SPPED * head_force;
     }
+    else if (head_direction == 180.0)
+    {
+        current_speed = -MAX_STEPPER_SPPED * head_force;
+    }
+    headStepper.setSpeed(current_speed);
+    headStepper.runSpeed();
+
+    // if (head_force != 0.0)
+    // {
+    //     if (head_direction == 0.0)
+    //     {
+    //         headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+    //         headStepper.runSpeed();
+    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+    //     }
+    //     if (head_direction == 180.0)
+    //     {
+    //         headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
+    //         headStepper.runSpeed();
+    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
+    //     }
+    //     // head_steps = abs(headStepper.currentPosition());
+    //     // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
+    // }
 }
