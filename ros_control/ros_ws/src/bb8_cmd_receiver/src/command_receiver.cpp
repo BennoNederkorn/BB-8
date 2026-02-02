@@ -4,9 +4,10 @@
 
 CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_("")
 {
-    this->kp = 2.0; // this->declare_parameter<double>("kp", 2.0);
-    this->ki = 0.0; // this->declare_parameter<double>("ki", 0.0);
-    this->kd = 0.0; // this->declare_parameter<double>("kd", 0.0);
+    this->kp = 4.0; // this->declare_parameter<double>("kp", 2.0);
+    this->ki = 0.25; // this->declare_parameter<double>("ki", 0.0);
+    this->kd = 0.5; // this->declare_parameter<double>("kd", 0.0);
+    this->max_inclination = 20.0; // Default max inclination in degrees
 
     // RCLCPP_INFO(this->get_logger(), "Parameters declared: kp=%.2f, ki=%.2f, kd=%.2f", kp, ki, kd);
 
@@ -77,10 +78,10 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         RCLCPP_INFO(this->get_logger(), "body_direction: %3.1f,  body_force: %1.3f", msg->body_direction, msg->body_force);
         RCLCPP_INFO(this->get_logger(), "AI mode: %d", msg->ai_mode);
 
-        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd\n"
+        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd,max_inclination\n"
         char buffer[128];
-        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f\n",
-                               ai_mode, head_dir, head_force, body_dir, body_force, this->kp, this->ki, this->kd);
+        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f,%1.3f\n",
+                               ai_mode, head_dir, head_force, body_dir, body_force, this->kp, this->ki, this->kd, this->max_inclination);
 
         // Write to serial
         int written = write(serial_port_, buffer, len);
@@ -114,6 +115,11 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         "/pid_tune", 10,
         std::bind(&CommandReceiver::pid_callback, this, std::placeholders::_1));
 
+    // Control parameters subscription (MAX_INCLINATION, etc.)
+    control_params_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::ControlParams>(
+        "/control_params", 10,
+        std::bind(&CommandReceiver::control_params_callback, this, std::placeholders::_1));
+
     // Timer for reading serial data from ESP32 (10 Hz)
     serial_read_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
@@ -133,6 +139,12 @@ void CommandReceiver::pid_callback(const bb8_cmd_receiver::msg::PIDParams::Share
     this->kp = msg->kp;
     this->ki = msg->ki;
     this->kd = msg->kd;
+}
+
+void CommandReceiver::control_params_callback(const bb8_cmd_receiver::msg::ControlParams::SharedPtr msg)
+{
+    RCLCPP_INFO(this->get_logger(), "Received control params: max_inclination=%.3f", msg->max_inclination);
+    this->max_inclination = msg->max_inclination;
 }
 
 void CommandReceiver::serial_read_callback()

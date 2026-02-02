@@ -70,13 +70,14 @@ volatile int16_t encCountB = 0;
 
 // AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
 AccelStepper headStepper(AccelStepper::DRIVER, STEPPER_STEP, STEPPER_DIRECTION);
-const int MAX_STEPPER_SPPED = 2000; // Steps per second
-const int STEPPER_ACCELERATION = 1000;
+const int MAX_STEPPER_SPPED = 300; // Steps per second
+const int STEPPER_ACCELERATION = 200;
 const int TOTAL_STEPPER_STEPS = 4096; // TODO
 int head_steps = 0;
 volatile int relative_head_direction = 0;
 
-const float MAX_INCLINATION = 20.0; // degree
+const float MAX_INCLINATION = 20.0; // degree (initial default, can be overridden via serial)
+volatile float max_inclination = 20.0; // Tunable via dashboard
 static float accumulated_error = 0.0;
 static float lastTime = millis() / 1000.0;
 
@@ -109,13 +110,17 @@ volatile float output_A = 0.0;
 volatile float output_B = 0.0;
 
 // PID tuning parameters
-volatile float Kp = 3.0;
-volatile float Kd = 0.0;
-volatile float Ki = 0.0;
+volatile float Kp = 4.0;
+volatile float Kd = 0.25;
+volatile float Ki = 0.5;
 
 // Add acceleration limiting
-const float MAX_INCLINATION_RATE = 5.0;  // degrees per control cycle (adjust this)
+const float MAX_INCLINATION_RATE = 0.1;  // degrees per control cycle (adjust this)
 volatile float smoothed_inclination_goal = 0.0;
+
+// Add turn rate limiting
+const float MAX_TURN_RATE = 0.5;  // percent per control cycle (adjust this)
+volatile float smoothed_turn_output = 0.0;
 
 // ==========================================
 // 3. HELPER FUNCTIONS
@@ -365,7 +370,7 @@ void controlTask(void *pvParameters)
 
             // drive forward, tilt up (currentPitch < 0)
             // drive backward, tilt down (currentPitch > 0)
-            inclination_goal = forward_request * MAX_INCLINATION;
+            inclination_goal = forward_request * max_inclination;
 
             // Rate-limit the inclination goal to prevent jerky movements
             float inclination_delta = inclination_goal - smoothed_inclination_goal;
@@ -384,6 +389,11 @@ void controlTask(void *pvParameters)
             inclination_output = P_term + I_term + D_term;
             float turn_output = turn_request * 100; // from -100 (turn left) to 100 (turn right)
 
+            // Rate-limit turn output to prevent jerky head movements
+            float turn_delta = turn_output - smoothed_turn_output;
+            turn_delta = constrain(turn_delta, -MAX_TURN_RATE, MAX_TURN_RATE);
+            smoothed_turn_output += turn_delta;
+
             // // FORWARDS
             // output_A = -100; // left
             // output_B = 100;  // right
@@ -396,8 +406,8 @@ void controlTask(void *pvParameters)
             // // TURN RIGHT
             // output_A = -100; // left
             // output_B = -100; // right
-            output_A = turn_output - (inclination_output);
-            output_B = turn_output + (inclination_output);
+            output_A = smoothed_turn_output - (inclination_output);
+            output_B = smoothed_turn_output + (inclination_output);
 
             output_A = constrain(output_A, -100.0, 100.0);
             output_B = constrain(output_B, -100.0, 100.0);
@@ -513,13 +523,14 @@ void loop()
         int temp_ai;
         float temp_hd, temp_hf, temp_bd, temp_bf;
         float temp_kp, temp_ki, temp_kd;
+        float temp_max_incli;
 
         // sscanf parses the CSV string. Returns number of items successfully matched.
-        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f",
-                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd);
+        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f",
+                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd, &temp_max_incli);
 
-        // If we found all 5 items, update our global variables
-        if (items == 8)
+        // If we found all 9 items, update our global variables
+        if (items == 9)
         {
             if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
             {
@@ -533,6 +544,7 @@ void loop()
                 Kp = temp_kp;
                 Ki = temp_ki;
                 Kd = temp_kd;
+                max_inclination = temp_max_incli;
                 xSemaphoreGive(dataMutex);
                 // new_command_received = true;
             }
@@ -540,18 +552,48 @@ void loop()
     }
     send_data_to_jetson();
 
-    float current_speed = 0.0;
-    if (head_direction == 0.0)
+    // Use acceleration-controlled movement for smooth head rotation
+    if (head_force > 0.01)  // Small deadzone
     {
-        current_speed = MAX_STEPPER_SPPED * head_force;
+        float target_speed = MAX_STEPPER_SPPED * head_force;
+        
+        if (head_direction == 0.0)
+        {
+            // Rotate clockwise - keep moving target ahead
+            headStepper.moveTo(headStepper.currentPosition() + 1000);
+            headStepper.setMaxSpeed(target_speed);
+        }
+        else if (head_direction == 180.0)
+        {
+            // Rotate counter-clockwise - keep moving target behind
+            headStepper.moveTo(headStepper.currentPosition() - 1000);
+            headStepper.setMaxSpeed(target_speed);
+        }
     }
-    else if (head_direction == 180.0)
+    else
     {
-        current_speed = -MAX_STEPPER_SPPED * head_force;
-    }
-    headStepper.setSpeed(current_speed);
-    headStepper.runSpeed();
+        // Decelerate to stop at current position
+        // headStepper.moveTo(headStepper.currentPosition());
+        headStepper.stop();  // Sets a new target that allows deceleration
 
+    }
+    
+    headStepper.run();  // This respects acceleration!
+
+    // CONTROL 1: SPEED CONTROL FOR HEAD STEPPER
+    // float current_speed = 0.0;
+    // if (head_direction == 0.0)
+    // {
+    //     current_speed = MAX_STEPPER_SPPED * head_force;
+    // }
+    // else if (head_direction == 180.0)
+    // {
+    //     current_speed = -MAX_STEPPER_SPPED * head_force;
+    // }
+    // headStepper.setSpeed(current_speed);
+    // headStepper.runSpeed();
+
+    // CONTROL 2: POSITION CONTROL FOR HEAD STEPPER
     // if (head_force != 0.0)
     // {
     //     if (head_direction == 0.0)
