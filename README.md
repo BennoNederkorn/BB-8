@@ -126,12 +126,12 @@ sudo systemctl restart rtsp-stream.service
 
 ## Software
 ### Terminal 1
-1. SSH breakingbytes@100.93.171.127 | password: 
+1. ssh breakingbytes@100.93.171.127 | password: 
 2. cd Documents/BB-8
 3. docker-compose up -d
 4. docker exec -it ros_control /bin/bash
 5. cd root/ros_ws/
-6. colon build
+6. colcon build
 7. source install/setup.bash
 8. ros2 launch bb8_cmd_receiver bridge.launch.xml
 - Looking to automate steps 5-7

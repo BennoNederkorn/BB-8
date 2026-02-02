@@ -113,6 +113,10 @@ volatile float Kp = 3.0;
 volatile float Kd = 0.0;
 volatile float Ki = 0.0;
 
+// Add acceleration limiting
+const float MAX_INCLINATION_RATE = 5.0;  // degrees per control cycle (adjust this)
+volatile float smoothed_inclination_goal = 0.0;
+
 // ==========================================
 // 3. HELPER FUNCTIONS
 // ==========================================
@@ -363,7 +367,12 @@ void controlTask(void *pvParameters)
             // drive backward, tilt down (currentPitch > 0)
             inclination_goal = forward_request * MAX_INCLINATION;
 
-            inclination_error = inclination_goal + currentPitch; // Pitch is negetive
+            // Rate-limit the inclination goal to prevent jerky movements
+            float inclination_delta = inclination_goal - smoothed_inclination_goal;
+            inclination_delta = constrain(inclination_delta, -MAX_INCLINATION_RATE, MAX_INCLINATION_RATE);
+            smoothed_inclination_goal += inclination_delta;
+
+            inclination_error = smoothed_inclination_goal + currentPitch; // Pitch is negetive
             accumulated_error += inclination_error;
             // TODO cap this accumulation? How fast does this windup happen?
             accumulated_error = constrain(accumulated_error, -50, 50);
