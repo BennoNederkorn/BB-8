@@ -1,1 +1,5 @@
 float32 max_inclination
+float32 max_stepper_speed
+float32 stepper_acceleration
+float32 max_inclination_rate
+float32 max_turn_rate

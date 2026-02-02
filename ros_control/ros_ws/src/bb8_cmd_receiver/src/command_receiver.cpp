@@ -8,6 +8,10 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
     this->ki = 0.25; // this->declare_parameter<double>("ki", 0.0);
     this->kd = 0.5; // this->declare_parameter<double>("kd", 0.0);
     this->max_inclination = 20.0; // Default max inclination in degrees
+    this->max_stepper_speed = 300.0; // Default stepper speed (steps/sec)
+    this->stepper_acceleration = 200.0; // Default stepper acceleration
+    this->max_inclination_rate = 0.1; // Default rate limit (deg/cycle)
+    this->max_turn_rate = 0.5; // Default turn rate limit (%/cycle)
 
     // RCLCPP_INFO(this->get_logger(), "Parameters declared: kp=%.2f, ki=%.2f, kd=%.2f", kp, ki, kd);
 
@@ -78,10 +82,13 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         RCLCPP_INFO(this->get_logger(), "body_direction: %3.1f,  body_force: %1.3f", msg->body_direction, msg->body_force);
         RCLCPP_INFO(this->get_logger(), "AI mode: %d", msg->ai_mode);
 
-        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd,max_inclination\n"
-        char buffer[128];
-        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f,%1.3f\n",
-                               ai_mode, head_dir, head_force, body_dir, body_force, this->kp, this->ki, this->kd, this->max_inclination);
+        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate\n"
+        char buffer[192];
+        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f,%1.3f,%1.1f,%1.1f,%1.3f,%1.3f\n",
+                               ai_mode, head_dir, head_force, body_dir, body_force, 
+                               this->kp, this->ki, this->kd, this->max_inclination,
+                               this->max_stepper_speed, this->stepper_acceleration,
+                               this->max_inclination_rate, this->max_turn_rate);
 
         // Write to serial
         int written = write(serial_port_, buffer, len);
@@ -143,8 +150,14 @@ void CommandReceiver::pid_callback(const bb8_cmd_receiver::msg::PIDParams::Share
 
 void CommandReceiver::control_params_callback(const bb8_cmd_receiver::msg::ControlParams::SharedPtr msg)
 {
-    RCLCPP_INFO(this->get_logger(), "Received control params: max_inclination=%.3f", msg->max_inclination);
+    RCLCPP_INFO(this->get_logger(), "Received control params: max_incli=%.1f, max_step_spd=%.1f, step_accel=%.1f, max_incli_rate=%.3f, max_turn_rate=%.3f",
+                msg->max_inclination, msg->max_stepper_speed, msg->stepper_acceleration, 
+                msg->max_inclination_rate, msg->max_turn_rate);
     this->max_inclination = msg->max_inclination;
+    this->max_stepper_speed = msg->max_stepper_speed;
+    this->stepper_acceleration = msg->stepper_acceleration;
+    this->max_inclination_rate = msg->max_inclination_rate;
+    this->max_turn_rate = msg->max_turn_rate;
 }
 
 void CommandReceiver::serial_read_callback()

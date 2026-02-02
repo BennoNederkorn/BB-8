@@ -39,6 +39,10 @@ private:
     int serial_port_;
     float kp, ki, kd;
     float max_inclination;
+    float max_stepper_speed;
+    float stepper_acceleration;
+    float max_inclination_rate;
+    float max_turn_rate;
     std::string serial_buffer_;
     // rclcpp::TimerBase::SharedPtr timer_;
     

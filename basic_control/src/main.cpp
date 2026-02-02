@@ -70,13 +70,13 @@ volatile int16_t encCountB = 0;
 
 // AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
 AccelStepper headStepper(AccelStepper::DRIVER, STEPPER_STEP, STEPPER_DIRECTION);
-const int MAX_STEPPER_SPPED = 300; // Steps per second
-const int STEPPER_ACCELERATION = 200;
+volatile float max_stepper_speed = 300.0; // Tunable via dashboard (steps/sec)
+volatile float stepper_acceleration = 200.0; // Tunable via dashboard (steps/sec²)
 const int TOTAL_STEPPER_STEPS = 4096; // TODO
 int head_steps = 0;
 volatile int relative_head_direction = 0;
 
-const float MAX_INCLINATION = 20.0; // degree (initial default, can be overridden via serial)
+// const float MAX_INCLINATION = 20.0; // degree (initial default, can be overridden via serial)
 volatile float max_inclination = 20.0; // Tunable via dashboard
 static float accumulated_error = 0.0;
 static float lastTime = millis() / 1000.0;
@@ -114,12 +114,12 @@ volatile float Kp = 4.0;
 volatile float Kd = 0.25;
 volatile float Ki = 0.5;
 
-// Add acceleration limiting
-const float MAX_INCLINATION_RATE = 0.1;  // degrees per control cycle (adjust this)
+// Add acceleration limiting (tunable via dashboard)
+volatile float max_inclination_rate = 0.1;  // degrees per control cycle
 volatile float smoothed_inclination_goal = 0.0;
 
-// Add turn rate limiting
-const float MAX_TURN_RATE = 0.5;  // percent per control cycle (adjust this)
+// Add turn rate limiting (tunable via dashboard)
+volatile float max_turn_rate = 0.5;  // percent per control cycle
 volatile float smoothed_turn_output = 0.0;
 
 // ==========================================
@@ -223,8 +223,8 @@ void setupMotors()
 void setupHeadStepper()
 {
     // headStepper.setSpeed(10);      // We will set speed in the loop
-    headStepper.setMaxSpeed(MAX_STEPPER_SPPED); // Steps per second
-    headStepper.setAcceleration(STEPPER_ACCELERATION);
+    headStepper.setMaxSpeed(max_stepper_speed); // Steps per second (tunable)
+    headStepper.setAcceleration(stepper_acceleration); // Tunable
 }
 
 void setMotorSpeed(mcpwm_unit_t unit, float speed)
@@ -374,7 +374,7 @@ void controlTask(void *pvParameters)
 
             // Rate-limit the inclination goal to prevent jerky movements
             float inclination_delta = inclination_goal - smoothed_inclination_goal;
-            inclination_delta = constrain(inclination_delta, -MAX_INCLINATION_RATE, MAX_INCLINATION_RATE);
+            inclination_delta = constrain(inclination_delta, -max_inclination_rate, max_inclination_rate);
             smoothed_inclination_goal += inclination_delta;
 
             inclination_error = smoothed_inclination_goal + currentPitch; // Pitch is negetive
@@ -391,7 +391,7 @@ void controlTask(void *pvParameters)
 
             // Rate-limit turn output to prevent jerky head movements
             float turn_delta = turn_output - smoothed_turn_output;
-            turn_delta = constrain(turn_delta, -MAX_TURN_RATE, MAX_TURN_RATE);
+            turn_delta = constrain(turn_delta, -max_turn_rate, max_turn_rate);
             smoothed_turn_output += turn_delta;
 
             // // FORWARDS
@@ -523,14 +523,19 @@ void loop()
         int temp_ai;
         float temp_hd, temp_hf, temp_bd, temp_bf;
         float temp_kp, temp_ki, temp_kd;
-        float temp_max_incli;
+        float temp_max_incli, temp_max_step_spd, temp_step_accel;
+        float temp_max_incli_rate, temp_max_turn_rate;
 
         // sscanf parses the CSV string. Returns number of items successfully matched.
-        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f",
-                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, &temp_kp, &temp_ki, &temp_kd, &temp_max_incli);
+        // Format: ai,hd,hf,bd,bf,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate
+        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
+                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, 
+                           &temp_kp, &temp_ki, &temp_kd, &temp_max_incli,
+                           &temp_max_step_spd, &temp_step_accel, 
+                           &temp_max_incli_rate, &temp_max_turn_rate);
 
-        // If we found all 9 items, update our global variables
-        if (items == 9)
+        // If we found all 13 items, update our global variables
+        if (items == 13)
         {
             if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
             {
@@ -545,8 +550,14 @@ void loop()
                 Ki = temp_ki;
                 Kd = temp_kd;
                 max_inclination = temp_max_incli;
+                max_stepper_speed = temp_max_step_spd;
+                stepper_acceleration = temp_step_accel;
+                max_inclination_rate = temp_max_incli_rate;
+                max_turn_rate = temp_max_turn_rate;
+                // Apply stepper settings immediately
+                headStepper.setMaxSpeed(max_stepper_speed);
+                headStepper.setAcceleration(stepper_acceleration);
                 xSemaphoreGive(dataMutex);
-                // new_command_received = true;
             }
         }
     }
@@ -555,7 +566,7 @@ void loop()
     // Use acceleration-controlled movement for smooth head rotation
     if (head_force > 0.01)  // Small deadzone
     {
-        float target_speed = MAX_STEPPER_SPPED * head_force;
+        float target_speed = max_stepper_speed * head_force;
         
         if (head_direction == 0.0)
         {
