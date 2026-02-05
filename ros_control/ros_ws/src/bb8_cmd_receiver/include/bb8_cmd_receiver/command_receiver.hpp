@@ -14,6 +14,7 @@
 #include "bb8_cmd_receiver/msg/state_estimation.hpp"
 #include "bb8_cmd_receiver/msg/pid_params.hpp"
 #include "bb8_cmd_receiver/msg/control_params.hpp"
+#include "bb8_cmd_receiver/msg/imu_reset.hpp"
 
 class CommandReceiver : public rclcpp::Node
 {
@@ -25,11 +26,13 @@ private:
     void serial_read_callback();
     void pid_callback(const bb8_cmd_receiver::msg::PIDParams::SharedPtr msg);
     void control_params_callback(const bb8_cmd_receiver::msg::ControlParams::SharedPtr msg);
+    void imu_reset_callback(const bb8_cmd_receiver::msg::IMUReset::SharedPtr msg);
 
     rclcpp::Subscription<bb8_cmd_receiver::msg::HMICmds>::SharedPtr command_subscription_;
     rclcpp::Subscription<std_msgs::msg::String>::SharedPtr image_subscription_;
     rclcpp::Subscription<bb8_cmd_receiver::msg::PIDParams>::SharedPtr pid_subscription_;
     rclcpp::Subscription<bb8_cmd_receiver::msg::ControlParams>::SharedPtr control_params_subscription_;
+    rclcpp::Subscription<bb8_cmd_receiver::msg::IMUReset>::SharedPtr imu_reset_subscription_;
     
     rclcpp::Publisher<bb8_cmd_receiver::msg::HMICmds>::SharedPtr hmi_echo_publisher_;
     rclcpp::Publisher<bb8_cmd_receiver::msg::StateEstimation>::SharedPtr state_publisher_;

@@ -127,6 +127,11 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         "/control_params", 10,
         std::bind(&CommandReceiver::control_params_callback, this, std::placeholders::_1));
 
+    // IMU reset subscription
+    imu_reset_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::IMUReset>(
+        "/imu_reset", 10,
+        std::bind(&CommandReceiver::imu_reset_callback, this, std::placeholders::_1));
+
     // Timer for reading serial data from ESP32 (10 Hz)
     serial_read_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
@@ -158,6 +163,27 @@ void CommandReceiver::control_params_callback(const bb8_cmd_receiver::msg::Contr
     this->stepper_acceleration = msg->stepper_acceleration;
     this->max_inclination_rate = msg->max_inclination_rate;
     this->max_turn_rate = msg->max_turn_rate;
+}
+
+void CommandReceiver::imu_reset_callback(const bb8_cmd_receiver::msg::IMUReset::SharedPtr msg)
+{
+    if (msg->reset_imu)
+    {
+        RCLCPP_INFO(this->get_logger(), "Received IMU reset command");
+        
+        // Send reset command to ESP32: "RESET_IMU\n"
+        const char* reset_cmd = "RESET_IMU\n";
+        int written = write(serial_port_, reset_cmd, strlen(reset_cmd));
+        
+        if (written < 0)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Failed to write IMU reset command to serial");
+        }
+        else
+        {
+            RCLCPP_INFO(this->get_logger(), "IMU reset command sent to ESP32");
+        }
+    }
 }
 
 void CommandReceiver::serial_read_callback()

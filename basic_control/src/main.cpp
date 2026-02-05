@@ -518,46 +518,57 @@ void loop()
         // Read the line until a newline character
         String line = Serial.readStringUntil('\n');
 
-        // Simple Parsing using sscanf
-        // temporary variables to ensure data integrity during parsing
-        int temp_ai;
-        float temp_hd, temp_hf, temp_bd, temp_bf;
-        float temp_kp, temp_ki, temp_kd;
-        float temp_max_incli, temp_max_step_spd, temp_step_accel;
-        float temp_max_incli_rate, temp_max_turn_rate;
-
-        // sscanf parses the CSV string. Returns number of items successfully matched.
-        // Format: ai,hd,hf,bd,bf,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate
-        int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                           &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, 
-                           &temp_kp, &temp_ki, &temp_kd, &temp_max_incli,
-                           &temp_max_step_spd, &temp_step_accel, 
-                           &temp_max_incli_rate, &temp_max_turn_rate);
-
-        // If we found all 13 items, update our global variables
-        if (items == 13)
+        // Check for IMU reset command first
+        if (line.startsWith("RESET_IMU"))
         {
-            if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
+            // Reset pitch and yaw to zero (does not affect future IMU updates)
+            currentPitch = 0.0;
+            currentYaw = 0.0;
+            Serial.println("IMU_RESET_OK");
+        }
+        else
+        {
+            // Simple Parsing using sscanf
+            // temporary variables to ensure data integrity during parsing
+            int temp_ai;
+            float temp_hd, temp_hf, temp_bd, temp_bf;
+            float temp_kp, temp_ki, temp_kd;
+            float temp_max_incli, temp_max_step_spd, temp_step_accel;
+            float temp_max_incli_rate, temp_max_turn_rate;
+
+            // sscanf parses the CSV string. Returns number of items successfully matched.
+            // Format: ai,hd,hf,bd,bf,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate
+            int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
+                               &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, 
+                               &temp_kp, &temp_ki, &temp_kd, &temp_max_incli,
+                               &temp_max_step_spd, &temp_step_accel, 
+                               &temp_max_incli_rate, &temp_max_turn_rate);
+
+            // If we found all 13 items, update our global variables
+            if (items == 13)
             {
-                sharedCmd.ai_mode = (temp_ai == 1);
-                sharedCmd.head_direction = temp_hd;
-                sharedCmd.head_force = temp_hf;
-                sharedCmd.body_direction = temp_bd;
-                sharedCmd.body_force = temp_bf;
-                head_direction = temp_hd;
-                head_force = temp_hf;
-                Kp = temp_kp;
-                Ki = temp_ki;
-                Kd = temp_kd;
-                max_inclination = temp_max_incli;
-                max_stepper_speed = temp_max_step_spd;
-                stepper_acceleration = temp_step_accel;
-                max_inclination_rate = temp_max_incli_rate;
-                max_turn_rate = temp_max_turn_rate;
-                // Apply stepper settings immediately
-                headStepper.setMaxSpeed(max_stepper_speed);
-                headStepper.setAcceleration(stepper_acceleration);
-                xSemaphoreGive(dataMutex);
+                if (xSemaphoreTake(dataMutex, (TickType_t)10) == pdTRUE)
+                {
+                    sharedCmd.ai_mode = (temp_ai == 1);
+                    sharedCmd.head_direction = temp_hd;
+                    sharedCmd.head_force = temp_hf;
+                    sharedCmd.body_direction = temp_bd;
+                    sharedCmd.body_force = temp_bf;
+                    head_direction = temp_hd;
+                    head_force = temp_hf;
+                    Kp = temp_kp;
+                    Ki = temp_ki;
+                    Kd = temp_kd;
+                    max_inclination = temp_max_incli;
+                    max_stepper_speed = temp_max_step_spd;
+                    stepper_acceleration = temp_step_accel;
+                    max_inclination_rate = temp_max_incli_rate;
+                    max_turn_rate = temp_max_turn_rate;
+                    // Apply stepper settings immediately
+                    headStepper.setMaxSpeed(max_stepper_speed);
+                    headStepper.setAcceleration(stepper_acceleration);
+                    xSemaphoreGive(dataMutex);
+                }
             }
         }
     }
