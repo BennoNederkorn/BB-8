@@ -4,9 +4,14 @@
 
 CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_("")
 {
-    this->kp = 2.0; // this->declare_parameter<double>("kp", 2.0);
-    this->ki = 0.0; // this->declare_parameter<double>("ki", 0.0);
-    this->kd = 0.0; // this->declare_parameter<double>("kd", 0.0);
+    this->kp = 4.0; // this->declare_parameter<double>("kp", 2.0);
+    this->ki = 0.25; // this->declare_parameter<double>("ki", 0.0);
+    this->kd = 0.5; // this->declare_parameter<double>("kd", 0.0);
+    this->max_inclination = 20.0; // Default max inclination in degrees
+    this->max_stepper_speed = 300.0; // Default stepper speed (steps/sec)
+    this->stepper_acceleration = 200.0; // Default stepper acceleration
+    this->max_inclination_rate = 0.1; // Default rate limit (deg/cycle)
+    this->max_turn_rate = 0.5; // Default turn rate limit (%/cycle)
 
     // RCLCPP_INFO(this->get_logger(), "Parameters declared: kp=%.2f, ki=%.2f, kd=%.2f", kp, ki, kd);
 
@@ -77,10 +82,13 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         RCLCPP_INFO(this->get_logger(), "body_direction: %3.1f,  body_force: %1.3f", msg->body_direction, msg->body_force);
         RCLCPP_INFO(this->get_logger(), "AI mode: %d", msg->ai_mode);
 
-        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd\n"
-        char buffer[128];
-        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f\n",
-                               ai_mode, head_dir, head_force, body_dir, body_force, this->kp, this->ki, this->kd);
+        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate\n"
+        char buffer[192];
+        int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f,%1.3f,%1.1f,%1.1f,%1.3f,%1.3f\n",
+                               ai_mode, head_dir, head_force, body_dir, body_force, 
+                               this->kp, this->ki, this->kd, this->max_inclination,
+                               this->max_stepper_speed, this->stepper_acceleration,
+                               this->max_inclination_rate, this->max_turn_rate);
 
         // Write to serial
         int written = write(serial_port_, buffer, len);
@@ -114,6 +122,16 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         "/pid_tune", 10,
         std::bind(&CommandReceiver::pid_callback, this, std::placeholders::_1));
 
+    // Control parameters subscription (MAX_INCLINATION, etc.)
+    control_params_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::ControlParams>(
+        "/control_params", 10,
+        std::bind(&CommandReceiver::control_params_callback, this, std::placeholders::_1));
+
+    // IMU reset subscription
+    imu_reset_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::IMUReset>(
+        "/imu_reset", 10,
+        std::bind(&CommandReceiver::imu_reset_callback, this, std::placeholders::_1));
+
     // Timer for reading serial data from ESP32 (10 Hz)
     serial_read_timer_ = this->create_wall_timer(
         std::chrono::milliseconds(100),
@@ -133,6 +151,39 @@ void CommandReceiver::pid_callback(const bb8_cmd_receiver::msg::PIDParams::Share
     this->kp = msg->kp;
     this->ki = msg->ki;
     this->kd = msg->kd;
+}
+
+void CommandReceiver::control_params_callback(const bb8_cmd_receiver::msg::ControlParams::SharedPtr msg)
+{
+    RCLCPP_INFO(this->get_logger(), "Received control params: max_incli=%.1f, max_step_spd=%.1f, step_accel=%.1f, max_incli_rate=%.3f, max_turn_rate=%.3f",
+                msg->max_inclination, msg->max_stepper_speed, msg->stepper_acceleration, 
+                msg->max_inclination_rate, msg->max_turn_rate);
+    this->max_inclination = msg->max_inclination;
+    this->max_stepper_speed = msg->max_stepper_speed;
+    this->stepper_acceleration = msg->stepper_acceleration;
+    this->max_inclination_rate = msg->max_inclination_rate;
+    this->max_turn_rate = msg->max_turn_rate;
+}
+
+void CommandReceiver::imu_reset_callback(const bb8_cmd_receiver::msg::IMUReset::SharedPtr msg)
+{
+    if (msg->reset_imu)
+    {
+        RCLCPP_INFO(this->get_logger(), "Received IMU reset command");
+        
+        // Send reset command to ESP32: "RESET_IMU\n"
+        const char* reset_cmd = "RESET_IMU\n";
+        int written = write(serial_port_, reset_cmd, strlen(reset_cmd));
+        
+        if (written < 0)
+        {
+            RCLCPP_ERROR(this->get_logger(), "Failed to write IMU reset command to serial");
+        }
+        else
+        {
+            RCLCPP_INFO(this->get_logger(), "IMU reset command sent to ESP32");
+        }
+    }
 }
 
 void CommandReceiver::serial_read_callback()

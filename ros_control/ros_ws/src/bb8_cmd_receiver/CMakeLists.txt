@@ -15,6 +15,8 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/HMICmds.msg"
   "msg/StateEstimation.msg"
   "msg/PIDParams.msg"
+  "msg/ControlParams.msg"
+  "msg/IMUReset.msg"
   DEPENDENCIES std_msgs
 )
 
