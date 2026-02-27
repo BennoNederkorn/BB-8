@@ -476,7 +476,7 @@ void setup()
         // Failed to find MPU6050 chip
         while (1)
         {
-            delay(10); // Halt here if sensor fails
+            delay(10); // Halt here if sensor failsr
         }
     }
 
@@ -539,7 +539,7 @@ void loop()
             // sscanf parses the CSV string. Returns number of items successfully matched.
             // Format: ai,hd,hf,bd,bf,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate
             int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                               &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf, 
+                               &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf,    
                                &temp_kp, &temp_ki, &temp_kd, &temp_max_incli,
                                &temp_max_step_spd, &temp_step_accel, 
                                &temp_max_incli_rate, &temp_max_turn_rate);
