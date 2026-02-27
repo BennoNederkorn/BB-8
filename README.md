@@ -40,6 +40,8 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 
 ## 🏗️ Build Process (Overview)
 
+Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
+
 1.  **The Body:** The sphere was either 3D-printed in sections and assembled or based on a pre-existing acrylic globe. It was then sanded, primed, and painted.
 2.  **The Internal Drive:** A pendulum-style chassis was designed and 3D-printed. This chassis holds the motors, controller, and battery low to create a center of gravity. As the wheels turn, they drive against the inner wall of the sphere, causing the whole ball to roll.
 3.  **The Head:** The head was 3D-printed, painted, and detailed. A set of magnets was embedded in its base. A corresponding magnet assembly, controlled by a servo, is mounted on a mast at the top of the internal chassis, just under the sphere's inner "roof."
