@@ -1,5 +1,4 @@
 #include <Arduino.h>
-// #include <Stepper.h>
 #include <AccelStepper.h> // non-stopping Stepper Library
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
@@ -14,10 +13,6 @@
 // ==========================================
 
 // Stepper (Head)
-// #define STEPPER_PIN1 19
-// #define STEPPER_PIN3 5
-// #define STEPPER_PIN2 18
-// #define STEPPER_PIN4 17
 #define STEPPER_DIRECTION 19 // DIR+
 #define STEPPER_STEP 18      // PUL+
 
@@ -27,9 +22,8 @@
 #define MPU_ADDR 0x68
 
 // Motor A (Left) - Connected to H-Bridge L
-#define MOT_A_L_EN 13
-// #define MOT_A_R_EN 12 // Failed to communicate with the flash chip is GPIO 12 is used
-#define MOT_A_R_EN 4   //
+#define MOT_A_L_EN 13  // Enable Pin for Motor A Left
+#define MOT_A_R_EN 4   // Enable Pin for Motor A Right (Note: GPIO 12 conflicts with flash)
 #define MOT_A_L_PWM 27 // Diagram "PWM1"
 #define MOT_A_R_PWM 14 // Diagram "PWM2"
 
@@ -68,15 +62,14 @@ volatile float currentGyroZ = 0.0;
 volatile int16_t encCountA = 0;
 volatile int16_t encCountB = 0;
 
-// AccelStepper headStepper(AccelStepper::FULL4WIRE, STEPPER_PIN1, STEPPER_PIN3, STEPPER_PIN2, STEPPER_PIN4);
+// Stepper Configuration
 AccelStepper headStepper(AccelStepper::DRIVER, STEPPER_STEP, STEPPER_DIRECTION);
-volatile float max_stepper_speed = 300.0; // Tunable via dashboard (steps/sec)
+volatile float max_stepper_speed = 300.0;    // Tunable via dashboard (steps/sec)
 volatile float stepper_acceleration = 200.0; // Tunable via dashboard (steps/sec²)
-const int TOTAL_STEPPER_STEPS = 4096; // TODO
+const int TOTAL_STEPPER_STEPS = 4096;        // TODO
 int head_steps = 0;
 volatile int relative_head_direction = 0;
 
-// const float MAX_INCLINATION = 20.0; // degree (initial default, can be overridden via serial)
 volatile float max_inclination = 20.0; // Tunable via dashboard
 static float accumulated_error = 0.0;
 static float lastTime = millis() / 1000.0;
@@ -100,7 +93,7 @@ float head_force = 0.0;
 float body_direction = 0.0;
 float body_force = 0.0;
 
-// data to
+// Control variables
 volatile float forward_request = 0.0;
 volatile float turn_request = 0.0;
 volatile float inclination_goal = 0.0;
@@ -115,11 +108,11 @@ volatile float Kd = 0.25;
 volatile float Ki = 0.5;
 
 // Add acceleration limiting (tunable via dashboard)
-volatile float max_inclination_rate = 0.1;  // degrees per control cycle
+volatile float max_inclination_rate = 0.1; // degrees per control cycle
 volatile float smoothed_inclination_goal = 0.0;
 
 // Add turn rate limiting (tunable via dashboard)
-volatile float max_turn_rate = 0.5;  // percent per control cycle
+volatile float max_turn_rate = 0.5; // percent per control cycle
 volatile float smoothed_turn_output = 0.0;
 
 // ==========================================
@@ -223,7 +216,7 @@ void setupMotors()
 void setupHeadStepper()
 {
     // headStepper.setSpeed(10);      // We will set speed in the loop
-    headStepper.setMaxSpeed(max_stepper_speed); // Steps per second (tunable)
+    headStepper.setMaxSpeed(max_stepper_speed);        // Steps per second (tunable)
     headStepper.setAcceleration(stepper_acceleration); // Tunable
 }
 
@@ -317,17 +310,11 @@ void readIMU()
 // --- CORE 1: REAL-TIME CONTROL TASK ---
 void controlTask(void *pvParameters)
 {
-    // TODO check if this is fast enough
     TickType_t xLastWakeTime = xTaskGetTickCount();
     const TickType_t xFrequency = pdMS_TO_TICKS(10); // 10ms = 100Hz Loop
 
-    // float output_A = 0.0;
-    // float output_B = 0.0;
-
     for (;;)
     {
-        // Serial.println("CORE 1 Loop: realtime");
-
         // Take the mutex and copy the data to local vars to give it back quickly.
         if (xSemaphoreTake(dataMutex, (TickType_t)5) == pdTRUE)
         {
@@ -337,30 +324,14 @@ void controlTask(void *pvParameters)
             xSemaphoreGive(dataMutex);
         }
 
-        // Testcode: // ROMOVE BEFORE FINAL FLASH!
-        // ai_mode = true;
-        // body_force = 1.0;
-        // body_direction = 90.0;
-        // body_direction = body_direction + 0.1;
-        // if (body_direction > 360.0)
-        //     body_direction = 0.0;
-
         readIMU();
 
-        // TODO: where is the center of gravity?
-
-        // ASSUMPTION: BB8 stabilizes itself
-        // CONTROL APPROACH:
-        // - decoupling of the Drive (Velocity) from the Steering (Heading),
-        // - even though both are controlled by the same two motors.
-
-        // TODO Encoders needed?
-        // pcnt_get_counter_value(PCNT_UNIT_A, (int16_t *)&encCountA);
-        // pcnt_get_counter_value(PCNT_UNIT_B, (int16_t *)&encCountB);
+        // Control Logic
+        // AI Mode: Self-balancing PID control + Differential steering
+        // Manual Mode: Direct motor mapping based on direction vector
 
         if (ai_mode)
         {
-
             // 0 deg is turn right
             // 90 deg is drive forward
             // 180 deg is turn left
@@ -379,7 +350,7 @@ void controlTask(void *pvParameters)
 
             inclination_error = smoothed_inclination_goal + currentPitch; // Pitch is negetive
             accumulated_error += inclination_error;
-            // TODO cap this accumulation? How fast does this windup happen?
+            // Anti-windup for Integral term
             accumulated_error = constrain(accumulated_error, -50, 50);
 
             float P_term = Kp * inclination_error;
@@ -394,6 +365,7 @@ void controlTask(void *pvParameters)
             turn_delta = constrain(turn_delta, -max_turn_rate, max_turn_rate);
             smoothed_turn_output += turn_delta;
 
+            // Mix turn and inclination outputs for differential drive
             // // FORWARDS
             // output_A = -100; // left
             // output_B = 100;  // right
@@ -411,9 +383,6 @@ void controlTask(void *pvParameters)
 
             output_A = constrain(output_A, -100.0, 100.0);
             output_B = constrain(output_B, -100.0, 100.0);
-
-            // Serial.printf("body_direction: %.2f, forward_request: %.2f, turn_request: %.2f, inclination_goal: %.2f, inclination_error: %.2f, currentYaw: %.2f, currentGyroX: %.2f, inclination_output: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentYaw, currentGyroX, inclination_output);
-            // Serial.printf("body_dir: %.2f, frw_request: %.2f, trn_request: %.2f, incli_goal: %.2f, incli_error: %.2f, curPitch: %.2f, incli_output: %.2f, out_A: %.2f, out_B: %.2f \n", body_direction, forward_request, turn_request, inclination_goal, inclination_error, currentPitch, inclination_output, output_A, output_B);
         }
         else
         {
@@ -464,15 +433,12 @@ void send_data_to_jetson()
 void setup()
 {
     Serial.begin(115200);
-    // Serial.println("BB-8 Controller Starting...");
     dataMutex = xSemaphoreCreateMutex();
 
-    // pinMode(ONBOARD_LED, OUTPUT);
     Wire.begin(SDA_PIN, SCL_PIN, 400000); // Fast I2C
 
     if (!mpu.begin(MPU_ADDR, &Wire))
     {
-        // Serial.println("Failed to find MPU6050 chip!");
         // Failed to find MPU6050 chip
         while (1)
         {
@@ -487,9 +453,6 @@ void setup()
 
     setupMotors();
     setupHeadStepper();
-    // TODO Encoders:
-    // setupEncoder(PCNT_UNIT_A, MOT_A_VOUTA, MOT_A_VOUTB);
-    // setupEncoder(PCNT_UNIT_B, MOT_B_VOUTA, MOT_B_VOUTB);
 
     // Launch Control Task pinned to Core 1
     xTaskCreatePinnedToCore(
@@ -506,10 +469,8 @@ void setup()
 // --- CORE 0: Serial and non-realtime tasks ---
 void loop()
 {
-    // Serial.println("CORE 0 Loop: serial, stepper");
-
     // This loop handles Serial communication and the stepper motor "in the background"
-    // It will not slow down the motors because they are in the 'controlTask'
+    // It will not slow down the motors because they are in the 'controlTask' on Core 1
 
     // Check for incoming serial commands here
     if (Serial.available() > 0)
@@ -539,9 +500,9 @@ void loop()
             // sscanf parses the CSV string. Returns number of items successfully matched.
             // Format: ai,hd,hf,bd,bf,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate
             int items = sscanf(line.c_str(), "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                               &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf,    
+                               &temp_ai, &temp_hd, &temp_hf, &temp_bd, &temp_bf,
                                &temp_kp, &temp_ki, &temp_kd, &temp_max_incli,
-                               &temp_max_step_spd, &temp_step_accel, 
+                               &temp_max_step_spd, &temp_step_accel,
                                &temp_max_incli_rate, &temp_max_turn_rate);
 
             // If we found all 13 items, update our global variables
@@ -575,10 +536,10 @@ void loop()
     send_data_to_jetson();
 
     // Use acceleration-controlled movement for smooth head rotation
-    if (head_force > 0.01)  // Small deadzone
+    if (head_force > 0.01) // Small deadzone
     {
         float target_speed = max_stepper_speed * head_force;
-        
+
         if (head_direction == 0.0)
         {
             // Rotate clockwise - keep moving target ahead
@@ -595,42 +556,8 @@ void loop()
     else
     {
         // Decelerate to stop at current position
-        // headStepper.moveTo(headStepper.currentPosition());
-        headStepper.stop();  // Sets a new target that allows deceleration
-
+        headStepper.stop(); // Sets a new target that allows deceleration
     }
-    
-    headStepper.run();  // This respects acceleration!
 
-    // CONTROL 1: SPEED CONTROL FOR HEAD STEPPER
-    // float current_speed = 0.0;
-    // if (head_direction == 0.0)
-    // {
-    //     current_speed = MAX_STEPPER_SPPED * head_force;
-    // }
-    // else if (head_direction == 180.0)
-    // {
-    //     current_speed = -MAX_STEPPER_SPPED * head_force;
-    // }
-    // headStepper.setSpeed(current_speed);
-    // headStepper.runSpeed();
-
-    // CONTROL 2: POSITION CONTROL FOR HEAD STEPPER
-    // if (head_force != 0.0)
-    // {
-    //     if (head_direction == 0.0)
-    //     {
-    //         headStepper.setSpeed(MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-    //         headStepper.runSpeed();
-    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-    //     }
-    //     if (head_direction == 180.0)
-    //     {
-    //         headStepper.setSpeed(-MAX_STEPPER_SPPED * head_force); // Set a constant sweep speed (steps/sec)
-    //         headStepper.runSpeed();
-    //         // Serial.printf("CurrentStepperPosition: %d\n", abs(headStepper.currentPosition()));
-    //     }
-    //     // head_steps = abs(headStepper.currentPosition());
-    //     // relative_head_direction = head_steps * (360 / TOTAL_STEPPER_STEPS);
-    // }
+    headStepper.run(); // This respects acceleration!
 }
