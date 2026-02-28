@@ -11,7 +11,6 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 - **Spherical Movement:** Rolls in any direction using a "hamster-style" internal drive mechanism.
 - **Magnetic Head:** The head "floats" on top of the body, held in place by magnets, and can look around.
 - **Remote Control:** Controlled via a custom smartphone app or web interface using Bluetooth/Wi-Fi.
-- **Sound Effects:** Includes a small speaker to play BB-8's iconic beeps and boops.
 
 ---
 
@@ -28,13 +27,11 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 - **Misc:** Wires, switches, buck converter (to step down voltage for Arduino/servo)
 
 ### Hardware & Body
-
-The Robot is made up of a head and a sherical body. The build is structured in the following way:
-
-## BB-8 Robot Main Assembly Parts (details can be extracted from the CAD)
 Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
 If not accessible contact @martinwaxenberger
 
+The Robot is made up of a head and a sherical body. The build is structured in the following way:
+**BB-8 Robot Main Assembly Parts (details can be extracted from the CAD)**
 * **Head**
   * **Head Shell**
     * head dome
