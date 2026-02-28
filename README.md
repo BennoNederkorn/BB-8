@@ -25,28 +25,98 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 - **Head Control:** 1x SG90 Micro Servo (for head "look" mechanism)
 - **Wireless:** HC-05 Bluetooth Module (for Arduino) or built-in Wi-Fi (for Raspberry Pi)
 - **Power:** 11.1V 3S LiPo Battery (or a suitable 12V battery pack)
-- **Sound:** PAM8403 Audio Amplifier Module & a small 3W Speaker
 - **Misc:** Wires, switches, buck converter (to step down voltage for Arduino/servo)
 
 ### Hardware & Body
 
-- **Main Body:** Large (e.g., 16-20 inch) hollow plastic sphere or 3D-printed sphere. A large hamster ball or acrylic globe can also work.
-- **Head:** 3D-printed head (models available on Thingiverse) or a styrofoam ball, shaped and detailed.
-- **Internal Chassis:** 3D-printed or custom-built frame (from wood or acrylic) to hold all electronics, motors, and battery.
-- **Magnets:** Strong neodymium magnets (e.g., N52) for coupling the head to the internal drive.
-- **Paint:** White, orange, and silver spray paint (or acrylics) for detailing.
+The Robot is made up of a head and a sherical body. The build is structured in the following way:
+
+## BB-8 Robot Main Assembly Parts (details can be extracted from the CAD)
+Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
+
+* **Head**
+  * **Head Shell**
+    * head dome
+    * head lower shell
+    * antenna_big
+    * antenna_small
+    * lens
+    * holo
+  * **Head Inner**
+* **Body**
+  * **Upper Hemisphere**
+    * top middle half circle
+    * hole for button pentagon
+    * regular pentagon connector
+    * top and bottom half disc
+    * middle pentagons
+    * new bb8 button cap w twist
+    * twist cap
+  * **Lower Hemisphere**
+    * regular pentagon connector
+    * top and bottom half disc
+    * middle pentagons
+    * screw connector v6
+    * bottom middle half circle
+    * Parallel pins (Folder)
+  * **Inner Setup**
+    * Wooden_plate
+    * Reifen (Wheels)
+    * Stamped_aluminum_L_Bracket
+    * body_servo_magnetholder
+    * body_magnetholder_v2
+    * DC_Motor_DFRobot_38kgcm
+    * Jetson-housing_dummy
+    * Magnet_23x4_v1
+    * Motor_protector_v1
+    * Switch_mount
+    * Dummy_Stepdown_12V
+    * Dummy_Motordriver_H
+    * Motordriver_mount_v1
+    * Stepdown_12_mount_v1
+    * Stepper_adapter_v1
+    * mounting_structure_v1
+    * Battery_14-4_dummy
+    * Battery_11-1_mount_v1
+    * Switch
+    * din-trail_v1 (for jetson housing)
+    * Stepper_driver_mount_v1
+    * IMU_Dummy
+    * ESP32-body-dummy
+    * Scheiben (Folder - Washers)
+    * Zylinderkopfschrauben (Folder - Cylinder Head Screws)
+    * Holzschrauben (Folder - Wood Screws)
+    * Magnet fixation (Folder)
+      * iso_7046-2-m4x25-8_8-h
+      * mutter_iso_4032-m4-10
+      * Magnet_screwadapter_M4_v1 
+    * Bearing_holder_smaller_v1
+    * Kugelrolle_Alternativteil_groß (Ball Transfer Unit)
+    * Battery_14-4_mount_v1
+    * Capa_pcb
+    * Stepdown_5_10
+    * Breakout_PCB
+    * AdjustableWeight (housing)
+    * AdjustableWeight_cap
+    * weight
+    * Adapter_SDC
+    * Stepper Motor 28BYJ-48
+    * Stepper_mount_v1
+    * Antenna (not included)
+    * Nvidia Jetson Nano (not included)
 
 ---
 
 ## 🏗️ Build Process (Overview)
 
-Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
+The design of some of the robot parts -including the shell- were taken from a simple design by [Nachumtwersky on Instructables](https://www.instructables.com/3D-Printed-Robotic-BB8-unfinished-Instructions-Wil/).
 
-1.  **The Body:** The sphere was either 3D-printed in sections and assembled or based on a pre-existing acrylic globe. It was then sanded, primed, and painted.
-2.  **The Internal Drive:** A pendulum-style chassis was designed and 3D-printed. This chassis holds the motors, controller, and battery low to create a center of gravity. As the wheels turn, they drive against the inner wall of the sphere, causing the whole ball to roll.
-3.  **The Head:** The head was 3D-printed, painted, and detailed. A set of magnets was embedded in its base. A corresponding magnet assembly, controlled by a servo, is mounted on a mast at the top of the internal chassis, just under the sphere's inner "roof."
-4.  **Assembly & Wiring:** All electronic components were mounted to the chassis. The Arduino was wired to the motor driver (for drive motors) and the servo. The Bluetooth module was connected to the Arduino's serial pins for communication.
-5.  **Code:** The Arduino was programmed to listen for commands via Bluetooth (e.g., 'f' for forward, 'l' for left) and translate them into motor and servo movements.
+1.  **The Body:** The sphere was 3D-printed in sections and assembled by glueing, friction welding, and coating with epoxy resin. We followed the process found on the instructables page exactly. However, we would strongly recommend to remodel the shell single parts to make them fit together better, because the blueprint ones are highly inaccurate and make the assembly tedious.
+2.  **The Body's Base Platform:** A wooden base platform was cut from leftover wood. The dimensions were adapted from the blueprint. The necessary holes for the cable passage and all screws were measured and drilled first. The parts were then printed and fixed onto the platform. Currently, a weight is fixed onto the bottom of the platform with cable ties to ensure low center of mass. A magnet assembly, controlled by a stepper, is mounted on a mast at the top of the body's base platform, just under the sphere's inner "roof."
+3.  **The Head:** The head was completely remodeled compared to the blueprint. The central piece made from orange PLA houses three bearings and four magnets, that correspond to the body's magnets. It functions as the base part for the Raspberry and camera mounts aswell as being the part that the head's top and lower shell parts get snapped on. 
+4. **Wiring:** The exact wiring is as follows: <img src="./BB-8\ Modules\ and\ Interfaces.jpg/>" alt="drawing" width="400"/>
+4.  **Assembly:** After finishing the subassemblies (Head (Head_Upper_Shell, Head_inner_platform, Head_lower_Shell), Body_Base_platform, Body_Shell_Upper_hemisphere, Body_Shell_Lower_hemisphere), the Base Platform gets switched on and placed into the lower hemisphere, then the upper hemisphere gets put on the lower hemisphere and fixated with screws to finish the body. The head shell only gets clipped onto the central orange part, which finishes the head. Now it can be put onto the body by finding the magnet locking position.
+5.  **Code:** The Code is found in this very repository.
 
 ---
 
