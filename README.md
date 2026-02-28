@@ -11,6 +11,8 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 - **Spherical Movement:** Rolls in any direction using a "hamster-style" internal drive mechanism.
 - **Magnetic Head:** The head "floats" on top of the body, held in place by magnets, and can look around.
 - **Remote Control:** Controlled via a custom smartphone app or web interface using Bluetooth/Wi-Fi.
+- **Face Detection:** The heads camera streams a video to the body which does Inference on the Edge.
+- **Sentry Dashboad:** Shows robot state and detected faces in real-time.
 
 ---
 
@@ -122,47 +124,60 @@ The design of some of the robot parts -including the shell- were taken from a si
 
 ## 💻 Code
 
-You can find all the code used in this project in the `/Code` directory.
+You can find all the code used in this project in this Repository.
 
-- `/Code/Arduino/BB8_Control/` - The main sketch for the Arduino that handles motor control and Bluetooth communication.
-- `/Code/App/` - (If applicable) Source code for the simple smartphone controller app.
-
-### Dependencies
-
-- `AFMotor.h` (if using an Adafruit Motor Shield)
-- `SoftwareSerial.h` (for Bluetooth communication)
-
----
-
-## 🚀 Usage
-
-1.  Upload the `BB8_Control.ino` sketch to your Arduino.
-2.  Power on the droid.
-3.  Connect to the "HC-05" (or your module's name) device in your phone's Bluetooth settings.
-4.  Open a Bluetooth serial terminal app and send commands:
-    - `F`: Forward
-    - `B`: Backward
-    - `L`: Left
-    - `R`: Right
-    - `S`: Stop
-
----
+- `/ai_inference/` is based on the [jetson-inference by dusty-nv](https://github.com/dusty-nv/jetson-inference/) and runs the Face detection on the NVIDIA Jetson Nano.
+- `/basic_control/` uses PlatfromIO and the Arduino Framework to flash the low level controller code on the ESP32.
+- `/HumanMachineInterface/` (HMI) is an Angular webapp which is the user uses to remote control the robot. 
+- `/ros_control/` starts a Docker container which acts as the central communication node between the ESP32 and the HMI as well as the Sentry Dashboard. 
+- `/SentryDashboard/` is an Angular webapp which shows the robot state like platform inclination and motor speeds as well as the detected faces in real-time.
 
 ## 📜 License
 
-Copyright (c) 2025. All Rights Reserved.
-
-This source code is made available for viewing and reference purposes only. It is not licensed for use, modification, or distribution.
-
+This project is open-source and available to the public. You are free to view, use, modify, and distribute the source code in accordance with the terms of the [MIT License](LICENSE).
 _Disclaimer: This is a fan-made project. Star Wars and BB-8 are trademarks of Lucasfilm Ltd. and Disney._
 
-# Discussion
-
-should we use Prettier as Code formatter?
-file -> preferences -> settings -> search for format on save -> enable it
 
 
-# MediaMTX
+# Starting up the system
+## Hardware
+1. Connect XT60 connectors and check all the connections on both power lines
+2. Turn on the green power switch
+3. Check the ESP32 breakout board if the power switch is turned on (esp32 receives power from battery)
+4. Give one check over all the wire connections
+    - Power jack to ESP32 breakout board
+    - Power jack to NVIDIA Jetson Nano
+
+
+## Software
+### Terminal 1
+1. ssh breakingbytes@100.93.171.127 | password: 
+2. cd Documents/BB-8
+3. docker-compose up -d
+4. docker exec -it ros_control /bin/bash
+5. cd root/ros_ws/
+6. colcon build
+7. source install/setup.bash
+8. ros2 launch bb8_cmd_receiver bridge.launch.xml
+
+### Terminal 2 - AI Inference
+1. SSH breakingbytes@100.93.171.127 | password: 
+2. cd Documents/BB-8
+4. docker exec -it ai_inference /bin/bash
+5. cd python
+6. python3 -m face_service --network=facenet --headless --ws-port=9091 --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
+
+### Terminal 3 - Dashboard
+1. cd to project repository root
+2. cd SentryDashboard\sentry-dashboard
+3. ng serve
+
+---
+
+### MediaMTX
+---
+
+The MediaMTX server runs on the Raspberry Pi and distributes the Camera stream to all connecting clients.
  
 /etc/systemd/system/mediamtx.service
 - automatically starts the MediaMTX server in the background on boot
@@ -184,49 +199,3 @@ sudo systemctl daemon-reload
 sudo systemctl restart mediamtx.service
 sudo systemctl restart rtsp-stream.service
 ```
-
-# Starting up the system
-## Hardware
-1. Connect XT60 connectors and check all the connections on both power lines
-2. Turn on the green power switch
-3. Check the ESP32 breakout board if the power switch is turned on (esp32 receives power from battery)
-4. Give one check over all the wire connections
-    - Power jack to ESP32 breakout board
-    - Power jack to NVIDIA Jetson Nano
-5. 
-
-
-## Software
-### Terminal 1
-1. ssh breakingbytes@100.93.171.127 | password: 
-2. cd Documents/BB-8
-3. docker-compose up -d
-4. docker exec -it ros_control /bin/bash
-5. cd root/ros_ws/
-6. colcon build
-7. source install/setup.bash
-8. ros2 launch bb8_cmd_receiver bridge.launch.xml
-- Looking to automate steps 5-7
-
-<!-- ### Terminal 2 (Potentially Obsolete)
-1. SSH breakingbytes@100.93.171.127 | password: 
-2. cd Documents/BB-8
-4. docker exec -it ros_control /bin/bash
-5. cd root/ros_ws/
-6. colon build
-7. source install/setup.bash
-8. ros2 run bb8_cmd_receiver command_receiver
-- Writing a launch file to start command receiver from the same terminal as terminal 1 -->
-
-# Terminal 3 - AI Inference
-1. SSH breakingbytes@100.93.171.127 | password: 
-2. cd Documents/BB-8
-4. docker exec -it ai_inference /bin/bash
-5. cd python
-6. python3 -m face_service --network=facenet --headless --ws-port=9091 --threshold=0.8 --overlay=none --input-width=360 --input-height=240 --input=rtsp://100.95.33.109:8554/cam --input-codec=h264 --output=webrtc://@:8554/output
-
-# Terminal 4 - Dashboard
-1. cd to project repository root
-2. cd SentryDashboard\sentry-dashboard
-3. ng serve
-
