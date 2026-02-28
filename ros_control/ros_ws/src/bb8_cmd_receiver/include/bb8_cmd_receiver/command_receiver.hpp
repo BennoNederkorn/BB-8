@@ -33,12 +33,12 @@ private:
     rclcpp::Subscription<bb8_cmd_receiver::msg::PIDParams>::SharedPtr pid_subscription_;
     rclcpp::Subscription<bb8_cmd_receiver::msg::ControlParams>::SharedPtr control_params_subscription_;
     rclcpp::Subscription<bb8_cmd_receiver::msg::IMUReset>::SharedPtr imu_reset_subscription_;
-    
+
     rclcpp::Publisher<bb8_cmd_receiver::msg::HMICmds>::SharedPtr hmi_echo_publisher_;
     rclcpp::Publisher<bb8_cmd_receiver::msg::StateEstimation>::SharedPtr state_publisher_;
-    
+
     rclcpp::TimerBase::SharedPtr serial_read_timer_;
-    
+
     int serial_port_;
     float kp, ki, kd;
     float max_inclination;
@@ -47,8 +47,6 @@ private:
     float max_inclination_rate;
     float max_turn_rate;
     std::string serial_buffer_;
-    // rclcpp::TimerBase::SharedPtr timer_;
-    
 };
 
 #endif // BB8_CMD_RECEIVER__COMMAND_RECEIVER_HPP_

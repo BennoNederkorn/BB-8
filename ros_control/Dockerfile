@@ -1,6 +1,4 @@
 # --- Stage 1: The Base Image ---
-# (Same as before - strictly runtime dependencies)
-# FROM osrf/ros:kilted-desktop AS base
 FROM arm64v8/ros:kilted AS base
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -16,25 +14,20 @@ RUN apt-get update && \
     && rm -rf /var/lib/apt/lists/*
 
 # --- Stage 2: The Builder Image ---
-# (Temporary stage - thrown away at the end)
 FROM base AS builder
 SHELL ["/bin/bash", "-c"]
-
-# Install build tools ONLY in this layer (if not in base)
-# Assuming 'colcon' is in the base, otherwise install it here.
 
 WORKDIR /root/ros_ws
 
 # Copy local workspace
 COPY ./ros_ws /root/ros_ws
 
-# BUILD CRITICAL FIX:
-# Changed --symlink-install to --merge-install
-# This forces physical file copies so we can detach from source code later.
+# Build the workspace
+# Using --merge-install forces physical file copies so we can detach from source code later.
 RUN . /opt/ros/kilted/setup.bash && \
     colcon build --merge-install
 
-# --- Stage 3: The Runtime Image (NEW) ---
+# --- Stage 3: The Runtime Image ---
 # Start fresh from the clean base
 FROM base AS runner
 

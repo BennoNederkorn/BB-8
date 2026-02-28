@@ -1,6 +1,9 @@
 <launch>
+  <!-- Launch the rosbridge websocket server on port 9090 -->
   <include file="$(find-pkg-share rosbridge_server)/launch/rosbridge_websocket_launch.xml" >
       <arg name="port" value="9090"/>
   </include>
+
+  <!-- Launch the command receiver node to interface with the ESP32 -->
   <node pkg="bb8_cmd_receiver" exec="command_receiver" name="command_receiver" output="screen"/>
 </launch>

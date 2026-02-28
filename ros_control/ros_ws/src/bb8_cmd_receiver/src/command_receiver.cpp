@@ -4,17 +4,17 @@
 
 CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_("")
 {
-    this->kp = 4.0; // this->declare_parameter<double>("kp", 2.0);
-    this->ki = 0.25; // this->declare_parameter<double>("ki", 0.0);
-    this->kd = 0.5; // this->declare_parameter<double>("kd", 0.0);
-    this->max_inclination = 20.0; // Default max inclination in degrees
-    this->max_stepper_speed = 300.0; // Default stepper speed (steps/sec)
+    // Initialize default PID and control parameters
+    this->kp = 4.0;
+    this->ki = 0.25;
+    this->kd = 0.5;
+    this->max_inclination = 20.0;       // Default max inclination in degrees
+    this->max_stepper_speed = 300.0;    // Default stepper speed (steps/sec)
     this->stepper_acceleration = 200.0; // Default stepper acceleration
-    this->max_inclination_rate = 0.1; // Default rate limit (deg/cycle)
-    this->max_turn_rate = 0.5; // Default turn rate limit (%/cycle)
+    this->max_inclination_rate = 0.1;   // Default rate limit (deg/cycle)
+    this->max_turn_rate = 0.5;          // Default turn rate limit (%/cycle)
 
-    // RCLCPP_INFO(this->get_logger(), "Parameters declared: kp=%.2f, ki=%.2f, kd=%.2f", kp, ki, kd);
-
+    // Attempt to open serial port on common USB/ACM paths
     serial_port_ = open("/dev/ttyUSB0", O_RDWR | O_NOCTTY | O_NONBLOCK);
     if (serial_port_ < 0)
     {
@@ -41,14 +41,14 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
     tty.c_cflag &= ~PARENB; // No parity
     tty.c_cflag &= ~CSTOPB; // One stop bit
     tty.c_cflag &= ~CSIZE;
-    tty.c_cflag |= CS8;            // 8 bits per byte
-    tty.c_cflag |= CREAD | CLOCAL; // Turn on READ & ignore ctrl lines
-    tty.c_lflag &= ~ICANON;        // Non-canonical mode
-    tty.c_lflag &= ~ECHO;          // Disable echo
-    tty.c_lflag &= ~ISIG;          // Disable interpretation of INTR, QUIT and SUSP
+    tty.c_cflag |= CS8;                     // 8 bits per byte
+    tty.c_cflag |= CREAD | CLOCAL;          // Turn on READ & ignore ctrl lines
+    tty.c_lflag &= ~ICANON;                 // Non-canonical mode
+    tty.c_lflag &= ~ECHO;                   // Disable echo
+    tty.c_lflag &= ~ISIG;                   // Disable interpretation of INTR, QUIT and SUSP
     tty.c_iflag &= ~(IXON | IXOFF | IXANY); // Turn off s/w flow ctrl
-    tty.c_cc[VMIN] = 0;            // Non-blocking read
-    tty.c_cc[VTIME] = 0;           // No timeout
+    tty.c_cc[VMIN] = 0;                     // Non-blocking read
+    tty.c_cc[VTIME] = 0;                    // No timeout
 
     cfsetispeed(&tty, B115200);
     cfsetospeed(&tty, B115200);
@@ -68,10 +68,6 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
     auto command_callback =
         [this](bb8_cmd_receiver::msg::HMICmds::UniquePtr msg) -> void
     {
-        // this->get_parameter("kp", this->kp);
-        // this->get_parameter("ki", this->ki);
-        // this->get_parameter("kd", this->kd);
-
         bool ai_mode = msg->ai_mode;
         float head_dir = msg->head_direction;
         float head_force = msg->head_force > 1.0 ? 1.0 : msg->head_force;
@@ -82,10 +78,10 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         RCLCPP_INFO(this->get_logger(), "body_direction: %3.1f,  body_force: %1.3f", msg->body_direction, msg->body_force);
         RCLCPP_INFO(this->get_logger(), "AI mode: %d", msg->ai_mode);
 
-        // Format: "ai_mode,head_dir,head_force,body_dir,body_force,kp,ki,kd,max_incli,max_step_spd,step_accel,max_incli_rate,max_turn_rate\n"
+        // Serialize command data to CSV format for ESP32
         char buffer[192];
         int len = std::sprintf(buffer, "%d,%3.1f,%1.3f,%3.1f,%1.3f,%1.3f,%1.3f,%1.3f,%1.3f,%1.1f,%1.1f,%1.3f,%1.3f\n",
-                               ai_mode, head_dir, head_force, body_dir, body_force, 
+                               ai_mode, head_dir, head_force, body_dir, body_force,
                                this->kp, this->ki, this->kd, this->max_inclination,
                                this->max_stepper_speed, this->stepper_acceleration,
                                this->max_inclination_rate, this->max_turn_rate);
@@ -116,7 +112,7 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
 
     command_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::HMICmds>("/hmi_cmds", 10, command_callback);
     image_subscription_ = this->create_subscription<std_msgs::msg::String>("/web_cam/compressed", 10, image_callback);
-    
+
     // PID tuning subscription
     pid_subscription_ = this->create_subscription<bb8_cmd_receiver::msg::PIDParams>(
         "/pid_tune", 10,
@@ -138,16 +134,10 @@ CommandReceiver::CommandReceiver() : Node("command_receiver"), serial_buffer_(""
         std::bind(&CommandReceiver::serial_read_callback, this));
 }
 
-
 void CommandReceiver::pid_callback(const bb8_cmd_receiver::msg::PIDParams::SharedPtr msg)
 {
     RCLCPP_INFO(this->get_logger(), "Received PID params: kp=%.3f, ki=%.3f, kd=%.3f", msg->kp, msg->ki, msg->kd);
-    
-    // Update ROS parameters for persistence
-    // this->set_parameter(rclcpp::Parameter("kp", msg->kp));
-    // this->set_parameter(rclcpp::Parameter("ki", msg->ki));
-    // this->set_parameter(rclcpp::Parameter("kd", msg->kd));
-    
+
     this->kp = msg->kp;
     this->ki = msg->ki;
     this->kd = msg->kd;
@@ -156,7 +146,7 @@ void CommandReceiver::pid_callback(const bb8_cmd_receiver::msg::PIDParams::Share
 void CommandReceiver::control_params_callback(const bb8_cmd_receiver::msg::ControlParams::SharedPtr msg)
 {
     RCLCPP_INFO(this->get_logger(), "Received control params: max_incli=%.1f, max_step_spd=%.1f, step_accel=%.1f, max_incli_rate=%.3f, max_turn_rate=%.3f",
-                msg->max_inclination, msg->max_stepper_speed, msg->stepper_acceleration, 
+                msg->max_inclination, msg->max_stepper_speed, msg->stepper_acceleration,
                 msg->max_inclination_rate, msg->max_turn_rate);
     this->max_inclination = msg->max_inclination;
     this->max_stepper_speed = msg->max_stepper_speed;
@@ -170,11 +160,11 @@ void CommandReceiver::imu_reset_callback(const bb8_cmd_receiver::msg::IMUReset::
     if (msg->reset_imu)
     {
         RCLCPP_INFO(this->get_logger(), "Received IMU reset command");
-        
+
         // Send reset command to ESP32: "RESET_IMU\n"
-        const char* reset_cmd = "RESET_IMU\n";
+        const char *reset_cmd = "RESET_IMU\n";
         int written = write(serial_port_, reset_cmd, strlen(reset_cmd));
-        
+
         if (written < 0)
         {
             RCLCPP_ERROR(this->get_logger(), "Failed to write IMU reset command to serial");
@@ -190,27 +180,27 @@ void CommandReceiver::serial_read_callback()
 {
     char read_buf[256];
     int bytes_read = read(serial_port_, read_buf, sizeof(read_buf) - 1);
-    
+
     if (bytes_read > 0)
     {
         read_buf[bytes_read] = '\0';
         serial_buffer_ += read_buf;
-        
+
         // Process complete lines (ending with \n)
         size_t newline_pos;
         while ((newline_pos = serial_buffer_.find('\n')) != std::string::npos)
         {
             std::string line = serial_buffer_.substr(0, newline_pos);
             serial_buffer_.erase(0, newline_pos + 1);
-            
+
             // Parse ESP32 CSV format:
             // "frw_request,trn_request,incli_goal,incli_error,cur_pitch,cur_yaw,incli_output,out_A,out_B,gyro_y"
             float frw_req, trn_req, incli_goal, incli_error, cur_pitch, cur_yaw, incli_output, out_a, out_b, gyro_y;
-            
+
             int items = sscanf(line.c_str(),
-                "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
-                &frw_req, &trn_req, &incli_goal, &incli_error, &cur_pitch, &cur_yaw, &incli_output, &out_a, &out_b, &gyro_y);
-            
+                               "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f",
+                               &frw_req, &trn_req, &incli_goal, &incli_error, &cur_pitch, &cur_yaw, &incli_output, &out_a, &out_b, &gyro_y);
+
             if (items == 10)
             {
                 auto state_msg = bb8_cmd_receiver::msg::StateEstimation();
@@ -224,11 +214,11 @@ void CommandReceiver::serial_read_callback()
                 state_msg.motor_a_output = out_a;
                 state_msg.motor_b_output = out_b;
                 state_msg.gyro_y = gyro_y;
-                
+
                 state_publisher_->publish(state_msg);
             }
         }
-        
+
         // Prevent buffer overflow by trimming if too long
         if (serial_buffer_.size() > 1024)
         {
