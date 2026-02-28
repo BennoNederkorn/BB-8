@@ -28,9 +28,11 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 
 ### Hardware & Body
 Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
+
 If not accessible contact @martinwaxenberger
 
 The Robot is made up of a head and a sherical body. The build is structured in the following way:
+
 **BB-8 Robot Main Assembly Parts (details can be extracted from the CAD)**
 * **Head**
   * **Head Shell**
@@ -112,9 +114,9 @@ The design of some of the robot parts -including the shell- were taken from a si
 1.  **The Body:** The sphere was 3D-printed in sections and assembled by glueing, friction welding, and coating with epoxy resin. We followed the process found on the instructables page exactly. However, we would strongly recommend to remodel the shell single parts to make them fit together better, because the blueprint ones are highly inaccurate and make the assembly tedious.
 2.  **The Body's Base Platform:** A wooden base platform was cut from leftover wood. The dimensions were adapted from the blueprint. The necessary holes for the cable passage and all screws were measured and drilled first. The parts were then printed and fixed onto the platform. Currently, a weight is fixed onto the bottom of the platform with cable ties to ensure low center of mass. A magnet assembly, controlled by a stepper, is mounted on a mast at the top of the body's base platform, just under the sphere's inner "roof."
 3.  **The Head:** The head was completely remodeled compared to the blueprint. The central piece made from orange PLA houses three bearings and four magnets, that correspond to the body's magnets. It functions as the base part for the Raspberry and camera mounts aswell as being the part that the head's top and lower shell parts get snapped on. 
-4. **Wiring:** The exact wiring is as follows: <img src="./BB-8\ Modules\ and\ Interfaces.jpg/>" alt="drawing" width="400"/>
-4.  **Assembly:** After finishing the subassemblies (Head (Head_Upper_Shell, Head_inner_platform, Head_lower_Shell), Body_Base_platform, Body_Shell_Upper_hemisphere, Body_Shell_Lower_hemisphere), the Base Platform gets switched on and placed into the lower hemisphere, then the upper hemisphere gets put on the lower hemisphere and fixated with screws to finish the body. The head shell only gets clipped onto the central orange part, which finishes the head. Now it can be put onto the body by finding the magnet locking position.
-5.  **Code:** The Code is found in this very repository.
+4. **Wiring:** The exact wiring is as follows: ![drawing](<BB-8 Modules and Interfaces.jpg>)
+5.  **Assembly:** After finishing the subassemblies (Head (Head_Upper_Shell, Head_inner_platform, Head_lower_Shell), Body_Base_platform, Body_Shell_Upper_hemisphere, Body_Shell_Lower_hemisphere), the Base Platform gets switched on and placed into the lower hemisphere, then the upper hemisphere gets put on the lower hemisphere and fixated with screws to finish the body. The head shell only gets clipped onto the central orange part, which finishes the head. Now it can be put onto the body by finding the magnet locking position.
+6.  **Code:** The Code is found in this very repository.
 
 ---
 
