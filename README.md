@@ -20,13 +20,19 @@ A repository documenting the build of a personal, remote-controlled BB-8 droid i
 
 ### Electronics
 
-- **Main Controller:** Arduino Uno (or Raspberry Pi for more advanced features)
-- **Motor Controller:** L298N Dual H-Bridge Motor Driver
-- **Drive Motors:** 2x 12V DC Geared Motors with Wheels
-- **Head Control:** 1x SG90 Micro Servo (for head "look" mechanism)
-- **Wireless:** HC-05 Bluetooth Module (for Arduino) or built-in Wi-Fi (for Raspberry Pi)
-- **Power:** 11.1V 3S LiPo Battery (or a suitable 12V battery pack)
-- **Misc:** Wires, switches, buck converter (to step down voltage for Arduino/servo)
+- **Main controller:** ESP32
+- **Main computer:** NVIDIA Jetson
+- **Head computer:** Raspberry Pi 3
+- **DC motors:** 2x 12V gearmotor with encoders, 122RPM, 90:1, 38Kg.cm
+- **DC motor drivers:** 2x H-bridge BTS7960 5.5V to 27V 43A PWM
+- **Stepper motor:** NEMA 17, 4.8 V
+- **14.8V LiPo battery** 2400 mAh, powers the drive system
+- **11.1V LiPo battery** 2400 mAh, powers the Jetson, stepper motor and the ESP32 with all connected sensors.
+- **12V step-down converter:** Converts the 14.8V from battery to 12V motor E-Motor
+- **5V step-down converter:** Converts the 11.1V for low-power consumers
+- **IMU sensor/gyroscopic sensor:** Measures the platform inclination
+- **Rocker switch** Powers on-off the entire system
+- **Misc:** wires, switches, cable lugs, resistors, capacitors
 
 ### Hardware & Body
 Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
