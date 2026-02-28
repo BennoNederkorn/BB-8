@@ -116,7 +116,7 @@ The design of some of the robot parts -including the shell- were taken from a si
 1.  **The Body:** The sphere was 3D-printed in sections and assembled by glueing, friction welding, and coating with epoxy resin. We followed the process found on the instructables page exactly. However, we would strongly recommend to remodel the shell single parts to make them fit together better, because the blueprint ones are highly inaccurate and make the assembly tedious.
 2.  **The Body's Base Platform:** A wooden base platform was cut from leftover wood. The dimensions were adapted from the blueprint. The necessary holes for the cable passage and all screws were measured and drilled first. The parts were then printed and fixed onto the platform. Currently, a weight is fixed onto the bottom of the platform with cable ties to ensure low center of mass. A magnet assembly, controlled by a stepper, is mounted on a mast at the top of the body's base platform, just under the sphere's inner "roof."
 3.  **The Head:** The head was completely remodeled compared to the blueprint. The central piece made from orange PLA houses three bearings and four magnets, that correspond to the body's magnets. It functions as the base part for the Raspberry and camera mounts aswell as being the part that the head's top and lower shell parts get snapped on. 
-4. **Wiring:** The exact wiring is as follows: ![drawing](<BB-8 Modules and Interfaces.jpg>)
+4. **Wiring:** The exact wiring is as follows: ![drawing](<images/BB-8 Modules and Interfaces.jpg>)
 5.  **Assembly:** After finishing the subassemblies (Head (Head_Upper_Shell, Head_inner_platform, Head_lower_Shell), Body_Base_platform, Body_Shell_Upper_hemisphere, Body_Shell_Lower_hemisphere), the Base Platform gets switched on and placed into the lower hemisphere, then the upper hemisphere gets put on the lower hemisphere and fixated with screws to finish the body. The head shell only gets clipped onto the central orange part, which finishes the head. Now it can be put onto the body by finding the magnet locking position.
 6.  **Code:** The Code is found in this very repository.
 
@@ -128,15 +128,16 @@ You can find all the code used in this project in this Repository.
 
 - `/ai_inference/` is based on the [jetson-inference by dusty-nv](https://github.com/dusty-nv/jetson-inference/) and runs the Face detection on the NVIDIA Jetson Nano.
 - `/basic_control/` uses PlatfromIO and the Arduino Framework to flash the low level controller code on the ESP32.
-- `/HumanMachineInterface/` (HMI) is an Angular webapp which is the user uses to remote control the robot. 
+- `/HumanMachineInterface/` (HMI) is an Angular webapp which is the user uses to remote control the robot.
+
+<img src="images/HMI.png" alt="drawing" width="400"/>
+
 - `/ros_control/` starts a Docker container which acts as the central communication node between the ESP32 and the HMI as well as the Sentry Dashboard. 
 - `/SentryDashboard/` is an Angular webapp which shows the robot state like platform inclination and motor speeds as well as the detected faces in real-time.
 
-## 📜 License
+## Communication
 
-This project is open-source and available to the public. You are free to view, use, modify, and distribute the source code in accordance with the terms of the [MIT License](LICENSE).
-_Disclaimer: This is a fan-made project. Star Wars and BB-8 are trademarks of Lucasfilm Ltd. and Disney._
-
+<img src="images/communication_diagram.png" alt="drawing" width="600"/>
 
 
 # Starting up the system
@@ -199,3 +200,9 @@ sudo systemctl daemon-reload
 sudo systemctl restart mediamtx.service
 sudo systemctl restart rtsp-stream.service
 ```
+
+
+# 📜 License
+
+This project is open-source and available to the public. You are free to view, use, modify, and distribute the source code in accordance with the terms of the [MIT License](LICENSE).
+_Disclaimer: This is a fan-made project. Star Wars and BB-8 are trademarks of Lucasfilm Ltd. and Disney._
