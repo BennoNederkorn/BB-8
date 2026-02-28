@@ -33,6 +33,7 @@ The Robot is made up of a head and a sherical body. The build is structured in t
 
 ## BB-8 Robot Main Assembly Parts (details can be extracted from the CAD)
 Link to the CAD-files: https://tumde-my.sharepoint.com/:u:/g/personal/martin_waxenberger_tum_de/IQCvh5IetDzzRL6QHhY5nwgcAf_V6iJTSffVneadlo5a15s?e=HcrNPn
+If not accessible contact @martinwaxenberger
 
 * **Head**
   * **Head Shell**
